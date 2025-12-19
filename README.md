@@ -50,6 +50,8 @@ Then open the URL shown in the terminal (usually http://localhost:8501).
 
 live demo: https://anime-recommender-pq9owtbshe9uahxgwm7rzt.streamlit.app/
 
+Some titles may show ‘No reasonably matching results found’ due to strict exact‑match filtering and API search limitations. Future work: improve fuzzy matching and add ID‑based lookups.
+
 
 ## Phase 2 (Planned Improvements)
 
