@@ -34,6 +34,7 @@ A simple web app that searches anime titles across multiple public APIs (Jikan +
 ## How to Run
 
 git clone https://github.com/Narenp-2003/anime-recommender.git
+
 cd anime-recommender
 
 python -m venv .venv
