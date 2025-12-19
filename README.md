@@ -48,8 +48,14 @@ streamlit run app.py
 
 Then open the URL shown in the terminal (usually http://localhost:8501).
 
+live demo: https://anime-recommender-pq9owtbshe9uahxgwm7rzt.streamlit.app/
+
+
 ## Phase 2 (Planned Improvements)
 
 - Use per-anime ID endpoints (e.g., Jikan "full anime by ID") to fetch all related movies/OVAs/sequels for a franchise using official relations fields like "sequel", "side story", etc.[web:240][web:243][web:247]
 - Integrate another rich source (e.g., AniList) for better tags and episode info.
 - Improve recommendation quality with content-based or tag-based similarity.
+
+
+  
