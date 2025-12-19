@@ -33,11 +33,15 @@ A simple web app that searches anime titles across multiple public APIs (Jikan +
 
 ## How to Run
 
-git clone <your-repo-url>
+git clone https://github.com/Narenp-2003/anime-recommender.git
 cd anime-recommender
+
 python -m venv .venv
+
 .venv\Scripts\activate
+
 pip install -r requirements.txt # or install manually
+
 streamlit run app.py
 
 
