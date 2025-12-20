@@ -29,10 +29,10 @@ if query.strip():
         st.markdown("---")
         col_left, col_right = st.columns([1, 1])
 
+        best = results.iloc[0]
+
         with col_left:
             st.subheader("Best Match")
-
-            best = results.iloc[0]
 
             st.write(f"**Title:** {best['title']}")
             st.write(f"**Provider:** {best['provider']}")
@@ -99,34 +99,51 @@ if query.strip():
 
         st.markdown("---")
 
-        # All reasonably matching results
+        # --- All reasonably matching results with provider filter ---
         st.subheader("All reasonably matching results")
-        table_df = results[[
-            "title", "type", "total_episodes", "status", "score", "provider", "simple_match"
-        ]].copy()
 
-        # Normalize status for results table
-        table_df["status"] = (
-            table_df["status"]
-            .fillna("Currently airing")
-            .replace({
-                "None": "Currently airing",
-                "Ongoing": "Currently airing",
-                "On going": "Currently airing",
-            })
+        provider_options = ["All"] + sorted(results["provider"].astype(str).unique().tolist())
+        provider_filter = st.selectbox(
+            "Provider filter (search source)",
+            options=provider_options,
+            index=0,
         )
 
-        table_df.rename(columns={
-            "title": "Title",
-            "type": "Type",
-            "total_episodes": "Episodes",
-            "status": "Status",
-            "score": "Score",
-            "provider": "Provider",
-            "simple_match": "Title match score",
-        }, inplace=True)
+        filtered_results = results.copy()
+        if provider_filter != "All":
+            filtered_results = filtered_results[
+                filtered_results["provider"].astype(str) == provider_filter
+            ]
 
-        st.dataframe(table_df)
+        if filtered_results.empty:
+            st.info("No results match the selected provider.")
+        else:
+            table_df = filtered_results[[
+                "title", "type", "total_episodes", "status", "score", "provider", "simple_match"
+            ]].copy()
+
+            # Normalize status
+            table_df["status"] = (
+                table_df["status"]
+                .fillna("Currently airing")
+                .replace({
+                    "None": "Currently airing",
+                    "Ongoing": "Currently airing",
+                    "On going": "Currently airing",
+                })
+            )
+
+            table_df.rename(columns={
+                "title": "Title",
+                "type": "Type",
+                "total_episodes": "Episodes",
+                "status": "Status",
+                "score": "Score",
+                "provider": "Provider",
+                "simple_match": "Title match score",
+            }, inplace=True)
+
+            st.dataframe(table_df)
 
         # --- More Like This with filters ---
         st.markdown("---")
