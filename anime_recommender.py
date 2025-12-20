@@ -1,6 +1,8 @@
 # anime_recommender.py
 import requests
 import pandas as pd
+from rapidfuzz import fuzz  # NEW
+
 
 # --- Base URLs for providers ---
 JIKAN_BASE_URL = "https://api.jikan.moe/v4/anime"
@@ -39,10 +41,10 @@ def jikan_results_to_df(results):
         score = item.get("score")
         episodes = item.get("episodes")
         synopsis = item.get("synopsis")
-        status = item.get("status")  # "Finished Airing", "Currently Airing", etc.[web:106][web:143]
+        status = item.get("status")  # "Finished Airing", "Currently Airing", etc.
 
         genres_list = [g["name"] for g in item.get("genres", [])] or []
-        type_ = item.get("type")  # TV, Movie, OVA, etc.[web:222]
+        type_ = item.get("type")  # TV, Movie, OVA, etc.
 
         aired = item.get("aired") or {}
         start_date = (aired.get("from") or "").split("T")[0]  # "YYYY-MM-DD"
@@ -90,7 +92,7 @@ def kitsu_results_to_df(results):
     """
     Convert Kitsu JSON:API results to unified DataFrame.
     Attributes: canonicalTitle, averageRating, episodeCount, synopsis, status,
-                startDate, endDate.[web:107][web:104][web:101]
+                startDate, endDate.
     """
     rows = []
     for item in results:
@@ -126,7 +128,7 @@ def kitsu_results_to_df(results):
 def animedb_search_anime(query, limit=10):
     """
     Placeholder for a third provider (e.g., AnimeDb / AnimeAPI style).
-    Many such APIs expose fields like total_episodes, status, genres, dates.[web:137][web:140]
+    Many such APIs expose fields like total_episodes, status, genres, dates.
     For now, return empty so schema is ready for future extension.
     """
     return []
@@ -163,6 +165,42 @@ def animedb_results_to_df(results):
     return pd.DataFrame(rows)
 
 
+# ---------- TITLE MATCHING (FUZZY) ----------
+def _norm_title(s: str) -> str:
+    if not isinstance(s, str):
+        return ""
+    return (
+        s.lower()
+         .replace("’", "'")
+         .replace("–", "-")
+         .replace("—", "-")
+         .replace(":", " ")
+         .replace("!", "")
+         .replace("?", "")
+         .strip()
+    )
+
+
+def _fuzzy_title_score(user_title: str, candidate_title: str) -> float:
+    """
+    Fuzzy similarity between user query and candidate title (0.0–1.0).
+    Uses token_set_ratio so word order and extra words are handled well.
+    """
+    u = _norm_title(user_title)
+    c = _norm_title(candidate_title)
+    if not u or not c:
+        return 0.0
+    return fuzz.token_set_ratio(u, c) / 100.0
+
+
+def _title_match_score(title: str, query: str) -> float:
+    """
+    Wrapper around fuzzy matching so the rest of the code
+    can keep using _title_match_score.
+    """
+    return _fuzzy_title_score(query, title)
+
+
 # ---------- GENERIC INTERFACE ----------
 def get_provider_dataframe(query, limit=10, provider="jikan"):
     """
@@ -184,67 +222,14 @@ def get_provider_dataframe(query, limit=10, provider="jikan"):
         raise ValueError(f"Unknown provider: {provider}")
 
 
-def _title_match_score(title: str, query: str) -> float:
-    """
-    Title similarity:
-
-    - 1.0: exact match (case-insensitive, trimmed)
-    - 0.8: title equals query ignoring small punctuation differences
-    - 0.5: fallback partial overlap (used only if nothing matches exactly)
-    - 0.0: otherwise
-    """
-    if not isinstance(title, str):
-        return 0.0
-
-    t_raw = title.strip()
-    q_raw = query.strip()
-
-    t = t_raw.lower()
-    q = q_raw.lower()
-
-    if not t or not q:
-        return 0.0
-
-    # Exact match
-    if t == q:
-        return 1.0
-
-    # Soft exact: remove punctuation like ":" and "–"
-    def normalize(s: str) -> str:
-        return (
-            s.replace(":", "")
-             .replace("–", "-")
-             .replace("—", "-")
-             .replace("!", "")
-             .replace("?", "")
-             .strip()
-             .lower()
-        )
-
-    if normalize(t_raw) == normalize(q_raw):
-        return 0.8
-
-    # Fallback: partial word overlap
-    t_words = set(t.replace("?", "").replace("!", "").split())
-    q_words = set(q.replace("?", "").replace("!", "").split())
-    if not q_words:
-        return 0.0
-
-    overlap = len(t_words & q_words) / len(q_words)
-    if overlap >= 0.5:
-        return 0.5
-    else:
-        return 0.0
-
-
 def search_all_providers(query, limit=5):
     """
     Search Jikan, Kitsu, and placeholder AnimeDb; combine and
     keep only reasonably matching titles.
 
     Priority:
-    - First, keep only exact/soft matches (score >= 0.8).
-    - If none, fall back to partial matches (score >= 0.5).
+    - First, keep only strong fuzzy matches (score >= 0.85).
+    - If none, fall back to moderate matches (score >= 0.65).
     """
     providers = ["jikan", "kitsu", "animedb"]
     dfs = []
@@ -263,18 +248,18 @@ def search_all_providers(query, limit=5):
 
     combined = pd.concat(dfs, ignore_index=True)
 
-    # Compute title match score
+    # Compute title match score (fuzzy)
     combined["simple_match"] = combined["title"].apply(
         lambda t: _title_match_score(t, query)
     )
 
-    # Prefer true/soft exact matches
-    exact_mask = combined["simple_match"] >= 0.8
+    # Prefer strong fuzzy matches
+    exact_mask = combined["simple_match"] >= 0.85
     if exact_mask.any():
         combined = combined[exact_mask].reset_index(drop=True)
     else:
-        # Fallback: allow decent partial matches
-        combined = combined[combined["simple_match"] >= 0.5].reset_index(drop=True)
+        # Fallback: allow reasonable partial matches
+        combined = combined[combined["simple_match"] >= 0.65].reset_index(drop=True)
 
     return combined
 
