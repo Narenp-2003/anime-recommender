@@ -7,6 +7,7 @@ from anime_recommender import (
     get_genre_based_recommendations,
     get_same_title_group_sorted,
     get_series_group_with_relations,
+    get_best_synopsis,  # NEW
 )
 
 st.set_page_config(page_title="Anime Recommender", page_icon="🎌")
@@ -51,8 +52,10 @@ if query.strip():
                 status_val = "Currently airing"
             st.write(f"**Status:** {status_val}")
 
-            if isinstance(best.get("synopsis"), str) and best["synopsis"].strip():
-                st.write(f"**Synopsis:** {best['synopsis']}")
+            # Best available synopsis
+            synopsis_text = get_best_synopsis(results, best)
+            if isinstance(synopsis_text, str) and synopsis_text.strip():
+                st.write(f"**Synopsis:** {synopsis_text}")
 
             # Fuzzy match score + warning
             if pd.notna(best.get("simple_match")):
