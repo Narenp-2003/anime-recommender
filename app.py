@@ -25,43 +25,87 @@ if query.strip():
     if results.empty:
         st.error("No reasonably matching results found. Try another title or spelling.")
     else:
-        # Best match
-        best = results.iloc[0]
+        # --- Best match + timeline side by side ---
+        st.markdown("---")
+        col_left, col_right = st.columns([1, 1])
 
-        st.subheader("Best Match")
-        st.write(f"**Title:** {best['title']}")
-        st.write(f"**Provider:** {best['provider']}")
-        if pd.notna(best.get("score")):
-            st.write(f"**Score:** {best['score']}")
-        if pd.notna(best.get("total_episodes")):
-            st.write(f"**Total episodes:** {best['total_episodes']}")
-        if isinstance(best.get("status"), str) and best["status"].strip():
-            # Normalize status here for the detail block as well
-            status_val = best["status"]
-            if not isinstance(status_val, str) or not status_val.strip() or status_val == "None":
+        with col_left:
+            st.subheader("Best Match")
+
+            best = results.iloc[0]
+
+            st.write(f"**Title:** {best['title']}")
+            st.write(f"**Provider:** {best['provider']}")
+            if pd.notna(best.get("score")):
+                st.write(f"**Score:** {best['score']}")
+            if pd.notna(best.get("total_episodes")):
+                st.write(f"**Total episodes:** {best['total_episodes']}")
+
+            # Normalize status for best match
+            status_val = best.get("status")
+            if (
+                not isinstance(status_val, str)
+                or not status_val.strip()
+                or status_val == "None"
+            ):
                 status_val = "Currently airing"
             st.write(f"**Status:** {status_val}")
-        if isinstance(best.get("synopsis"), str) and best["synopsis"].strip():
-            st.write(f"**Synopsis:** {best['synopsis']}")
 
-        # Show fuzzy match score, with warning if low
-        if pd.notna(best.get("simple_match")):
-            st.write(f"**Title match score:** {best['simple_match']:.2f}")
-            if best["simple_match"] < 0.8:
-                st.warning(
-                    "The match score is not very high. "
-                    "Please check that this is the correct show before trusting the timeline & recommendations."
+            if isinstance(best.get("synopsis"), str) and best["synopsis"].strip():
+                st.write(f"**Synopsis:** {best['synopsis']}")
+
+            # Fuzzy match score + warning
+            if pd.notna(best.get("simple_match")):
+                st.write(f"**Title match score:** {best['simple_match']:.2f}")
+                if best["simple_match"] < 0.8:
+                    st.warning(
+                        "The match score is not very high. "
+                        "Please confirm this is the correct show before trusting the timeline & recommendations."
+                    )
+
+        with col_right:
+            st.subheader("Series timeline")
+
+            series_df = get_series_group_with_relations(results, best)
+
+            if series_df.empty:
+                st.info("Not enough information to build a series timeline.")
+            else:
+                series_table = series_df[[
+                    "title", "type", "total_episodes", "status", "score", "provider"
+                ]].copy()
+
+                # Normalize status for series table
+                series_table["status"] = (
+                    series_table["status"]
+                    .fillna("Currently airing")
+                    .replace({
+                        "None": "Currently airing",
+                        "Ongoing": "Currently airing",
+                        "On going": "Currently airing",
+                    })
                 )
+
+                series_table.rename(columns={
+                    "title": "Title",
+                    "type": "Type",
+                    "total_episodes": "Episodes",
+                    "status": "Status",
+                    "score": "Score",
+                    "provider": "Provider",
+                }, inplace=True)
+
+                st.dataframe(series_table)
 
         st.markdown("---")
 
-        # Full results table
+        # All reasonably matching results
         st.subheader("All reasonably matching results")
         table_df = results[[
             "title", "type", "total_episodes", "status", "score", "provider", "simple_match"
         ]].copy()
 
-        # Normalize status for the results table
+        # Normalize status for results table
         table_df["status"] = (
             table_df["status"]
             .fillna("Currently airing")
@@ -84,77 +128,89 @@ if query.strip():
 
         st.dataframe(table_df)
 
+        # --- More Like This with filters ---
         st.markdown("---")
+        st.subheader("More Like This (Similar Genre, Top 30)")
 
-        # Series / timeline block (with relations)
-        st.subheader("Series timeline (including related entries)")
-        series_df = get_series_group_with_relations(results, best)
+        # Filter controls
+        col_f1, col_f2, col_f3 = st.columns(3)
 
-        if series_df.empty:
-            st.info("Not enough information to build a series timeline.")
-        else:
-            series_table = series_df[[
-                "title", "type", "total_episodes", "status", "score", "provider"
-            ]].copy()
-
-            # Normalize status for series timeline table
-            series_table["status"] = (
-                series_table["status"]
-                .fillna("Currently airing")
-                .replace({
-                    "None": "Currently airing",
-                    "Ongoing": "Currently airing",
-                    "On going": "Currently airing",
-                })
+        with col_f1:
+            type_filter = st.selectbox(
+                "Type filter",
+                options=["All", "TV", "Movie", "OVA", "ONA", "Special"],
+                index=0,
             )
 
-            series_table.rename(columns={
-                "title": "Title",
-                "type": "Type",
-                "total_episodes": "Episodes",
-                "status": "Status",
-                "score": "Score",
-                "provider": "Provider",
-            }, inplace=True)
+        with col_f2:
+            min_score = st.slider(
+                "Minimum score",
+                min_value=0.0,
+                max_value=10.0,
+                value=0.0,
+                step=0.5,
+            )
 
-            st.dataframe(series_table)
+        with col_f3:
+            only_airing = st.checkbox("Only currently airing", value=False)
 
-        st.markdown("---")
-
-        # More Like This: genre-based
-        st.subheader("More Like This (Similar Genre, Top 30)")
+        # Compute genre-based recommendations
         genre_recs = get_genre_based_recommendations(results, best, top_n=30)
 
         if genre_recs.empty:
             st.info("Not enough genre information to generate recommendations.")
         else:
-            recs_table = genre_recs[[
-                "title", "score", "total_episodes", "status", "genres", "provider"
-            ]].copy()
+            filtered = genre_recs.copy()
 
-            # Normalize status for More Like This table
-            recs_table["status"] = (
-                recs_table["status"]
-                .fillna("Currently airing")
-                .replace({
-                    "None": "Currently airing",
-                    "Ongoing": "Currently airing",
-                    "On going": "Currently airing",
-                })
-            )
+            # Apply type filter
+            if type_filter != "All":
+                filtered = filtered[
+                    filtered["type"].astype(str).str.upper() == type_filter.upper()
+                ]
 
-            recs_table.rename(columns={
-                "title": "Title",
-                "score": "Score",
-                "total_episodes": "Episodes",
-                "status": "Status",
-                "genres": "Genres",
-                "provider": "Provider",
-            }, inplace=True)
+            # Apply score filter
+            if pd.notna(min_score) and min_score > 0:
+                filtered = filtered[filtered["score"].fillna(0) >= min_score]
 
-            # Reset index so numbering starts at 0,1,2,... in the UI
-            recs_table = recs_table.reset_index(drop=True)
+            # Apply airing filter
+            if only_airing:
+                filtered_status = filtered["status"].astype(str).str.lower()
+                mask_airing = (
+                    filtered_status.str.contains("airing")
+                    | filtered_status.str.contains("ongoing")
+                )
+                filtered = filtered[mask_airing]
 
-            st.dataframe(recs_table)
+            if filtered.empty:
+                st.info("No recommendations match the selected filters.")
+            else:
+                recs_table = filtered[[
+                    "title", "score", "total_episodes", "status", "genres", "provider"
+                ]].copy()
+
+                # Normalize status for More Like This table
+                recs_table["status"] = (
+                    recs_table["status"]
+                    .fillna("Currently airing")
+                    .replace({
+                        "None": "Currently airing",
+                        "Ongoing": "Currently airing",
+                        "On going": "Currently airing",
+                    })
+                )
+
+                recs_table.rename(columns={
+                    "title": "Title",
+                    "score": "Score",
+                    "total_episodes": "Episodes",
+                    "status": "Status",
+                    "genres": "Genres",
+                    "provider": "Provider",
+                }, inplace=True)
+
+                # Reset index so numbering is 0,1,2,...
+                recs_table = recs_table.reset_index(drop=True)
+
+                st.dataframe(recs_table)
 else:
     st.info("Type an anime title above to get started.")
