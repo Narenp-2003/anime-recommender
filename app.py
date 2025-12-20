@@ -12,138 +12,149 @@ from anime_recommender import (
 st.set_page_config(page_title="Anime Recommender", page_icon="🎌")
 
 st.title("Anime Recommender 🎌")
-st.write("Enter an anime name. The app will query multiple sources and show what is actually known.")
+st.write("Search for an anime title to see best matches, timeline, and similar-genre recommendations.")
 
-# Single text input with 200 character limit
-query = st.text_input(
-    "Anime name:",
-    value="That Time I Got Reincarnated as a Slime",
-    max_chars=200
-)
+query = st.text_input("Enter anime title", "")
 
-search_limit = st.slider(
-    "Number of results per provider",
-    min_value=3,
-    max_value=20,
-    value=5,
-    step=1
-)
+search_limit = st.slider("Max results per provider", min_value=5, max_value=30, value=15, step=5)
 
-if st.button("Search"):
-    if not query.strip():
-        st.error("Please enter an anime name.")
+if query.strip():
+    with st.spinner("Searching across providers..."):
+        results = search_all_providers(query, limit=search_limit)
+
+    if results.empty:
+        st.error("No reasonably matching results found. Try another title or spelling.")
     else:
-        with st.spinner("Searching across multiple providers..."):
-            combined = search_all_providers(query, limit=search_limit)
+        # Best match
+        best = results.iloc[0]
 
-        if combined.empty:
-            st.error("No reasonably matching results found.")
+        st.subheader("Best Match")
+        st.write(f"**Title:** {best['title']}")
+        st.write(f"**Provider:** {best['provider']}")
+        if pd.notna(best.get("score")):
+            st.write(f"**Score:** {best['score']}")
+        if pd.notna(best.get("total_episodes")):
+            st.write(f"**Total episodes:** {best['total_episodes']}")
+        if isinstance(best.get("status"), str) and best["status"].strip():
+            # Normalize status here for the detail block as well
+            status_val = best["status"]
+            if not isinstance(status_val, str) or not status_val.strip() or status_val == "None":
+                status_val = "Currently airing"
+            st.write(f"**Status:** {status_val}")
+        if isinstance(best.get("synopsis"), str) and best["synopsis"].strip():
+            st.write(f"**Synopsis:** {best['synopsis']}")
+
+        # Show fuzzy match score, with warning if low
+        if pd.notna(best.get("simple_match")):
+            st.write(f"**Title match score:** {best['simple_match']:.2f}")
+            if best["simple_match"] < 0.8:
+                st.warning(
+                    "The match score is not very high. "
+                    "Please check that this is the correct show before trusting the timeline & recommendations."
+                )
+
+        st.markdown("---")
+
+        # Full results table
+        st.subheader("All reasonably matching results")
+        table_df = results[[
+            "title", "type", "total_episodes", "status", "score", "provider", "simple_match"
+        ]].copy()
+
+        # Normalize status for the results table
+        table_df["status"] = (
+            table_df["status"]
+            .fillna("Currently airing")
+            .replace({
+                "None": "Currently airing",
+                "Ongoing": "Currently airing",
+                "On going": "Currently airing",
+            })
+        )
+
+        table_df.rename(columns={
+            "title": "Title",
+            "type": "Type",
+            "total_episodes": "Episodes",
+            "status": "Status",
+            "score": "Score",
+            "provider": "Provider",
+            "simple_match": "Title match score",
+        }, inplace=True)
+
+        st.dataframe(table_df)
+
+        st.markdown("---")
+
+        # Series / timeline block (with relations)
+        st.subheader("Series timeline (including related entries)")
+        series_df = get_series_group_with_relations(results, best)
+
+        if series_df.empty:
+            st.info("Not enough information to build a series timeline.")
         else:
-            combined["score_num"] = pd.to_numeric(combined["score"], errors="coerce")
+            series_table = series_df[[
+                "title", "type", "total_episodes", "status", "score", "provider"
+            ]].copy()
 
-            combined_sorted = combined.sort_values(
-                by=["simple_match", "score_num"],
-                ascending=[False, False]
+            # Normalize status for series timeline table
+            series_table["status"] = (
+                series_table["status"]
+                .fillna("Currently airing")
+                .replace({
+                    "None": "Currently airing",
+                    "Ongoing": "Currently airing",
+                    "On going": "Currently airing",
+                })
             )
 
-            best = combined_sorted.iloc[0]
+            series_table.rename(columns={
+                "title": "Title",
+                "type": "Type",
+                "total_episodes": "Episodes",
+                "status": "Status",
+                "score": "Score",
+                "provider": "Provider",
+            }, inplace=True)
 
-            st.subheader("Best Match")
+            st.dataframe(series_table)
 
-            st.write(f"**Title:** {best['title']}")
-            st.write(f"**Provider:** {best['provider']}")
-            st.write(f"**Score:** {best['score']}")
+        st.markdown("---")
 
-            match_strength = float(best.get("simple_match") or 0)
-            st.write(f"**Title match score:** {match_strength:.2f} (1.0 = perfect match)")
-            if match_strength < 0.85:
-                st.info(
-                    "This is a partial/approximate title match. "
-                    "Check the title and provider before trusting the timeline and recommendations."
-                )
+        # More Like This: genre-based
+        st.subheader("More Like This (Similar Genre, Top 30)")
+        genre_recs = get_genre_based_recommendations(results, best, top_n=30)
 
-            total_eps = best.get("total_episodes")
-            if pd.isna(total_eps) or total_eps is None:
-                st.write("**Total episodes:** Not provided by source (often unknown for ongoing shows)")
-            else:
-                st.write(f"**Total episodes:** {total_eps}")
-
-            status_text = str(best.get("status") or "").strip()
-            if status_text:
-                st.write(f"**Status:** {status_text}")
-            else:
-                st.write("**Status:** Not provided by source")
-
-            st.write("**Next episode / season info:** This project does not guess dates; use official announcements or schedule sites.")
-
-            synopsis = best.get("synopsis")
-            if isinstance(synopsis, str) and synopsis.strip():
-                st.markdown("**Summary:**")
-                st.write(synopsis)
-            else:
-                st.write("Summary not available from these APIs.")
-
-            # --- Same series entries + relations ---
-            st.markdown("---")
-            st.subheader("This Series: Seasons / Movies / Specials (by release date)")
-
-            same_series_df = get_series_group_with_relations(combined_sorted, best)
-            if same_series_df.empty:
-                st.write("No additional entries for this series found across providers.")
-            else:
-                same_series_df = same_series_df.reset_index(drop=True)
-                series_table = same_series_df[[
-                    "title", "type", "total_episodes", "status", "start_date", "end_date", "provider"
-                ]].copy()
-                series_table.rename(columns={
-                    "title": "Title",
-                    "type": "Type",
-                    "total_episodes": "Total episodes (raw)",
-                    "status": "Status (raw)",
-                    "start_date": "Start date",
-                    "end_date": "End date",
-                    "provider": "Provider"
-                }, inplace=True)
-                st.dataframe(series_table)
-
-            # --- Genre-based recommendations (top 30) ---
-            st.markdown("---")
-            st.subheader("More Like This (Similar Genre, Top 30)")
-
-            genre_recs = get_genre_based_recommendations(combined_sorted, best, top_n=30)
-            if genre_recs.empty:
-                st.write(
-                    "Not enough usable genre information across providers for this title. "
-                    "Try another anime or a more popular series."
-                )
-            else:
-                recs_table = genre_recs[[
-                    "title", "score", "total_episodes", "status", "genres", "provider"
-                ]].copy()
-                recs_table.rename(columns={
-                    "title": "Title",
-                    "score": "Score",
-                    "total_episodes": "Total episodes (raw)",
-                    "status": "Status (raw)",
-                    "genres": "Genres",
-                    "provider": "Provider"
-                }, inplace=True)
-                st.dataframe(recs_table)
-
-            # --- All close matches (overview) ---
-            st.markdown("---")
-            st.subheader("All Close Matches (All Providers)")
-
-            table_df = combined_sorted[[
-                "title", "score", "total_episodes", "status", "provider", "simple_match"
+        if genre_recs.empty:
+            st.info("Not enough genre information to generate recommendations.")
+        else:
+            recs_table = genre_recs[[
+                "title", "score", "total_episodes", "status", "genres", "provider"
             ]].copy()
-            table_df = table_df.reset_index(drop=True)
-            table_df.rename(columns={
+
+            # Normalize status for More Like This table
+            recs_table["status"] = (
+                recs_table["status"]
+                .fillna("Currently airing")
+                .replace({
+                    "None": "Currently airing",
+                    "Ongoing": "Currently airing",
+                    "On going": "Currently airing",
+                })
+            )
+
+            recs_table.rename(columns={
                 "title": "Title",
                 "score": "Score",
-                "total_episodes": "Total episodes (raw)",
-                "status": "Status (raw)",
+                "total_episodes": "Episodes",
+                "status": "Status",
+                "genres": "Genres",
                 "provider": "Provider",
-                "simple_match": "Title match score"
             }, inplace=True)
-            st.dataframe(table_df)
+
+            # Reset index so numbering starts at 0,1,2,... in the UI
+            recs_table = recs_table.reset_index(drop=True)
+
+            st.dataframe(recs_table)
+else:
+    st.info("Type an anime title above to get started.")
