@@ -1,7 +1,7 @@
 # anime_recommender.py
 import requests
 import pandas as pd
-from rapidfuzz import fuzz  # NEW
+from rapidfuzz import fuzz  # fuzzy matching
 
 
 # --- Base URLs for providers ---
@@ -32,8 +32,8 @@ def jikan_search_anime(query, limit=10):
 def jikan_results_to_df(results):
     """
     Convert Jikan results to unified DataFrame.
-    Fields: title, score, total_episodes, synopsis, status,
-            genres, start_date, end_date, type.
+    Fields: mal_id, title, all_titles, score, total_episodes, synopsis, status,
+            genres, start_date, end_date, type, provider.
     """
     rows = []
     for item in results:
@@ -41,17 +41,31 @@ def jikan_results_to_df(results):
         score = item.get("score")
         episodes = item.get("episodes")
         synopsis = item.get("synopsis")
-        status = item.get("status")  # "Finished Airing", "Currently Airing", etc.
+        status = item.get("status")
 
         genres_list = [g["name"] for g in item.get("genres", [])] or []
         type_ = item.get("type")  # TV, Movie, OVA, etc.
 
         aired = item.get("aired") or {}
-        start_date = (aired.get("from") or "").split("T")[0]  # "YYYY-MM-DD"
+        start_date = (aired.get("from") or "").split("T")[0]
         end_date = (aired.get("to") or "").split("T")[0]
 
+        # Collect all known titles (default, English, Japanese, synonyms)
+        all_titles = set()
+        if isinstance(title, str):
+            all_titles.add(title)
+        for t in item.get("titles", []) or []:
+            t_str = t.get("title")
+            if isinstance(t_str, str):
+                all_titles.add(t_str)
+        for alt in item.get("title_synonyms", []) or []:
+            if isinstance(alt, str):
+                all_titles.add(alt)
+
         rows.append({
+            "mal_id": item.get("mal_id"),
             "title": title,
+            "all_titles": list(all_titles),
             "score": score,
             "total_episodes": episodes,
             "synopsis": synopsis,
@@ -64,6 +78,53 @@ def jikan_results_to_df(results):
         })
 
     return pd.DataFrame(rows)
+
+
+def jikan_fetch_relations(mal_id):
+    """
+    Fetch related anime for a given MAL ID using Jikan relations endpoint.
+    Returns a list of dicts with minimal fields needed for the series table.
+    """
+    if mal_id is None:
+        return []
+
+    url = f"{JIKAN_BASE_URL}/{int(mal_id)}/relations"
+    try:
+        resp = requests.get(url, timeout=10)
+        resp.raise_for_status()
+    except requests.exceptions.RequestException as e:
+        print(f"[JIKAN] Relations request failed for {mal_id}: {e}")
+        return []
+
+    data = resp.json()
+    relations = data.get("data", []) or []
+
+    rows = []
+    for rel in relations:
+        rel_type = rel.get("relation")  # e.g. "Sequel", "Prequel", "Side story"
+        entries = rel.get("entry", []) or []
+        for ent in entries:
+            title = ent.get("name")
+            r_mal_id = ent.get("mal_id")
+            if not isinstance(title, str):
+                continue
+
+            rows.append({
+                "mal_id": r_mal_id,
+                "title": title,
+                "all_titles": [title],
+                "score": None,
+                "total_episodes": None,
+                "synopsis": None,
+                "status": rel_type,   # store relation type if nothing better
+                "genres": "",
+                "start_date": "",
+                "end_date": "",
+                "type": None,         # unknown from relations-only call
+                "provider": "jikan-rel",  # mark that it came from relations
+            })
+
+    return rows
 
 
 # ---------- KITSU IMPLEMENTATION ----------
@@ -91,8 +152,8 @@ def kitsu_search_anime(query, limit=10):
 def kitsu_results_to_df(results):
     """
     Convert Kitsu JSON:API results to unified DataFrame.
-    Attributes: canonicalTitle, averageRating, episodeCount, synopsis, status,
-                startDate, endDate.
+    Attributes: canonicalTitle, titles.{en,en_jp,ja_jp}, averageRating,
+                episodeCount, synopsis, status, startDate, endDate.
     """
     rows = []
     for item in results:
@@ -101,15 +162,27 @@ def kitsu_results_to_df(results):
         avg_rating = attrs.get("averageRating")
         synopsis = attrs.get("synopsis")
         episode_count = attrs.get("episodeCount")
-        status = attrs.get("status")  # "finished", "current", etc.
+        status = attrs.get("status")
 
-        start_date = attrs.get("startDate")  # "YYYY-MM-DD"
+        start_date = attrs.get("startDate")
         end_date = attrs.get("endDate")
 
         genres_str = ""  # Kitsu genres via relationships; left empty for now
 
+        # Collect title variants
+        all_titles = set()
+        if isinstance(title, str):
+            all_titles.add(title)
+        tdict = attrs.get("titles") or {}
+        for key in ("en", "en_jp", "ja_jp"):
+            t_str = tdict.get(key)
+            if isinstance(t_str, str):
+                all_titles.add(t_str)
+
         rows.append({
+            "mal_id": None,
             "title": title,
+            "all_titles": list(all_titles),
             "score": avg_rating,
             "total_episodes": episode_count,
             "synopsis": synopsis,
@@ -117,7 +190,7 @@ def kitsu_results_to_df(results):
             "genres": genres_str,
             "start_date": start_date,
             "end_date": end_date,
-            "type": attrs.get("subtype"),  # TV, movie, etc. if present
+            "type": attrs.get("subtype"),
             "provider": "kitsu",
         })
 
@@ -127,9 +200,7 @@ def kitsu_results_to_df(results):
 # ---------- THIRD PROVIDER (GENERIC / PLACEHOLDER) ----------
 def animedb_search_anime(query, limit=10):
     """
-    Placeholder for a third provider (e.g., AnimeDb / AnimeAPI style).
-    Many such APIs expose fields like total_episodes, status, genres, dates.
-    For now, return empty so schema is ready for future extension.
+    Placeholder for a third provider.
     """
     return []
 
@@ -149,8 +220,14 @@ def animedb_results_to_df(results):
         end_date = item.get("end_date")
         type_ = item.get("type")
 
+        all_titles = []
+        if isinstance(title, str):
+            all_titles = [title]
+
         rows.append({
+            "mal_id": None,
             "title": title,
+            "all_titles": all_titles,
             "score": item.get("average_rating"),
             "total_episodes": total_eps,
             "synopsis": synopsis,
@@ -183,8 +260,7 @@ def _norm_title(s: str) -> str:
 
 def _fuzzy_title_score(user_title: str, candidate_title: str) -> float:
     """
-    Fuzzy similarity between user query and candidate title (0.0–1.0).
-    Uses token_set_ratio so word order and extra words are handled well.
+    Fuzzy similarity between user query and a single candidate title (0.0–1.0).
     """
     u = _norm_title(user_title)
     c = _norm_title(candidate_title)
@@ -193,20 +269,35 @@ def _fuzzy_title_score(user_title: str, candidate_title: str) -> float:
     return fuzz.token_set_ratio(u, c) / 100.0
 
 
-def _title_match_score(title: str, query: str) -> float:
+def _title_match_score(row_title: str, query: str, all_titles=None) -> float:
     """
-    Wrapper around fuzzy matching so the rest of the code
-    can keep using _title_match_score.
+    Best fuzzy match score between query and all known titles for this anime.
     """
-    return _fuzzy_title_score(query, title)
+    candidates = []
+
+    if isinstance(row_title, str):
+        candidates.append(row_title)
+
+    if isinstance(all_titles, (list, tuple, set)):
+        for t in all_titles:
+            if isinstance(t, str):
+                candidates.append(t)
+
+    if not candidates:
+        return 0.0
+
+    best = 0.0
+    for cand in candidates:
+        s = _fuzzy_title_score(query, cand)
+        if s > best:
+            best = s
+    return best
 
 
 # ---------- GENERIC INTERFACE ----------
 def get_provider_dataframe(query, limit=10, provider="jikan"):
     """
     Get a unified DataFrame for a single provider.
-    Columns: title, score, total_episodes, synopsis, status,
-             genres, start_date, end_date, type, provider.
     """
     provider = provider.lower()
     if provider == "jikan":
@@ -228,8 +319,8 @@ def search_all_providers(query, limit=5):
     keep only reasonably matching titles.
 
     Priority:
-    - First, keep only strong fuzzy matches (score >= 0.85).
-    - If none, fall back to moderate matches (score >= 0.65).
+    - First, keep strong fuzzy matches (score >= 0.80).
+    - If none, fall back to moderate matches (score >= 0.60).
     """
     providers = ["jikan", "kitsu", "animedb"]
     dfs = []
@@ -241,29 +332,32 @@ def search_all_providers(query, limit=5):
 
     if not dfs:
         return pd.DataFrame(columns=[
-            "title", "score", "total_episodes", "synopsis", "status",
-            "genres", "start_date", "end_date", "type",
-            "provider", "simple_match"
+            "mal_id", "title", "all_titles", "score", "total_episodes",
+            "synopsis", "status", "genres", "start_date", "end_date",
+            "type", "provider", "simple_match"
         ])
 
     combined = pd.concat(dfs, ignore_index=True)
 
-    # Compute title match score (fuzzy)
-    combined["simple_match"] = combined["title"].apply(
-        lambda t: _title_match_score(t, query)
+    # Compute title match score using all title variants
+    combined["simple_match"] = combined.apply(
+        lambda row: _title_match_score(
+            row.get("title"), query, row.get("all_titles")
+        ),
+        axis=1,
     )
 
-    # Prefer strong fuzzy matches
-    exact_mask = combined["simple_match"] >= 0.85
-    if exact_mask.any():
-        combined = combined[exact_mask].reset_index(drop=True)
+    # Prefer strong matches; if none, allow moderate ones
+    strong_mask = combined["simple_match"] >= 0.80
+    if strong_mask.any():
+        combined = combined[strong_mask].reset_index(drop=True)
     else:
-        # Fallback: allow reasonable partial matches
-        combined = combined[combined["simple_match"] >= 0.65].reset_index(drop=True)
+        combined = combined[combined["simple_match"] >= 0.60].reset_index(drop=True)
 
     return combined
 
 
+# ---------- RECOMMENDATION HELPERS ----------
 def get_genre_based_recommendations(all_results_df, main_row, top_n=30):
     """
     From a larger DataFrame of related anime, return top_n other anime
@@ -275,7 +369,6 @@ def get_genre_based_recommendations(all_results_df, main_row, top_n=30):
         return pd.DataFrame()
 
     main_genre_set = set(g.strip().lower() for g in main_genres.split(",") if g.strip())
-
     if not main_genre_set:
         return pd.DataFrame()
 
@@ -286,7 +379,6 @@ def get_genre_based_recommendations(all_results_df, main_row, top_n=30):
         return len(main_genre_set & gset)
 
     df = all_results_df.copy()
-    # Exclude the main row itself (by title & provider)
     df = df[(df["title"] != main_row["title"]) | (df["provider"] != main_row["provider"])]
 
     df["shared_genres"] = df["genres"].apply(shared_genre_count)
@@ -312,7 +404,6 @@ def get_same_title_group_sorted(combined_df, main_row):
         if not isinstance(title, str):
             return False
         t = title.strip().lower()
-        # Basic heuristic: main title is substring or vice versa
         return main_title in t or t in main_title
 
     group_df = combined_df[combined_df["title"].apply(is_same_series)].copy()
@@ -320,7 +411,6 @@ def get_same_title_group_sorted(combined_df, main_row):
     if group_df.empty:
         return group_df
 
-    # Normalize dates so we can sort
     group_df["start_date_parsed"] = pd.to_datetime(group_df["start_date"], errors="coerce")
     group_df = group_df.sort_values(
         by=["start_date_parsed", "type", "title"],
@@ -330,10 +420,41 @@ def get_same_title_group_sorted(combined_df, main_row):
     return group_df
 
 
+def get_series_group_with_relations(combined_df, main_row):
+    """
+    Build a series group (seasons/movies/specials) for the main anime, and
+    enrich it with Jikan relations when MAL ID is available.
+    """
+    base_group = get_same_title_group_sorted(combined_df, main_row)
+
+    mal_id = main_row.get("mal_id") if "mal_id" in main_row else None
+    if main_row.get("provider") != "jikan" or mal_id in (None, "", 0):
+        return base_group
+
+    related_rows = jikan_fetch_relations(mal_id)
+    if not related_rows:
+        return base_group
+
+    rel_df = pd.DataFrame(related_rows)
+
+    combined_group = pd.concat([base_group, rel_df], ignore_index=True)
+    combined_group = combined_group.drop_duplicates(
+        subset=["title", "provider"],
+        keep="first"
+    )
+
+    combined_group["start_date_parsed"] = pd.to_datetime(
+        combined_group.get("start_date"), errors="coerce"
+    )
+    combined_group = combined_group.sort_values(
+        by=["start_date_parsed", "type", "title"],
+        ascending=[True, True, True]
+    ).drop(columns=["start_date_parsed"])
+
+    return combined_group
+
+
 def cli_demo():
-    """
-    Terminal test, transparent output.
-    """
     query = input("Enter an anime name: ")
     df = search_all_providers(query, limit=5)
 

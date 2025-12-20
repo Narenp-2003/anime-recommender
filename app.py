@@ -6,6 +6,7 @@ from anime_recommender import (
     search_all_providers,
     get_genre_based_recommendations,
     get_same_title_group_sorted,
+    get_series_group_with_relations,  # NEW
 )
 
 st.set_page_config(page_title="Anime Recommender", page_icon="🎌")
@@ -38,10 +39,8 @@ if st.button("Search"):
         if combined.empty:
             st.error("No reasonably matching results found.")
         else:
-            # Convert score to numeric for sorting
             combined["score_num"] = pd.to_numeric(combined["score"], errors="coerce")
 
-            # Sort by match score, then by rating
             combined_sorted = combined.sort_values(
                 by=["simple_match", "score_num"],
                 ascending=[False, False]
@@ -55,7 +54,6 @@ if st.button("Search"):
             st.write(f"**Provider:** {best['provider']}")
             st.write(f"**Score:** {best['score']}")
 
-            # Show fuzzy title match score and warn if weak
             match_strength = float(best.get("simple_match") or 0)
             st.write(f"**Title match score:** {match_strength:.2f} (1.0 = perfect match)")
             if match_strength < 0.85:
@@ -64,24 +62,20 @@ if st.button("Search"):
                     "Check the title and provider before trusting the timeline and recommendations."
                 )
 
-            # Total episodes (transparent)
             total_eps = best.get("total_episodes")
             if pd.isna(total_eps) or total_eps is None:
                 st.write("**Total episodes:** Not provided by source (often unknown for ongoing shows)")
             else:
                 st.write(f"**Total episodes:** {total_eps}")
 
-            # Status (finished / current / currently airing etc.)
             status_text = str(best.get("status") or "").strip()
             if status_text:
                 st.write(f"**Status:** {status_text}")
             else:
                 st.write("**Status:** Not provided by source")
 
-            # Next season / episode info (honest)
             st.write("**Next episode / season info:** This project does not guess dates; use official announcements or schedule sites.")
 
-            # Summary
             synopsis = best.get("synopsis")
             if isinstance(synopsis, str) and synopsis.strip():
                 st.markdown("**Summary:**")
@@ -89,17 +83,15 @@ if st.button("Search"):
             else:
                 st.write("Summary not available from these APIs.")
 
-            # --- Same series entries sorted by release date ---
+            # --- Same series entries + relations ---
             st.markdown("---")
             st.subheader("This Series: Seasons / Movies / Specials (by release date)")
 
-            same_series_df = get_same_title_group_sorted(combined_sorted, best)
+            same_series_df = get_series_group_with_relations(combined_sorted, best)
             if same_series_df.empty:
                 st.write("No additional entries for this series found across providers.")
             else:
-                # Reset index so numbering is 0,1,2,... instead of original indices
                 same_series_df = same_series_df.reset_index(drop=True)
-
                 series_table = same_series_df[[
                     "title", "type", "total_episodes", "status", "start_date", "end_date", "provider"
                 ]].copy()
@@ -142,9 +134,7 @@ if st.button("Search"):
             table_df = combined_sorted[[
                 "title", "score", "total_episodes", "status", "provider", "simple_match"
             ]].copy()
-            # Reset index here too so numbering is clean
             table_df = table_df.reset_index(drop=True)
-
             table_df.rename(columns={
                 "title": "Title",
                 "score": "Score",
@@ -153,5 +143,4 @@ if st.button("Search"):
                 "provider": "Provider",
                 "simple_match": "Title match score"
             }, inplace=True)
-
             st.dataframe(table_df)
