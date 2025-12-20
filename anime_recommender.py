@@ -363,8 +363,23 @@ def get_genre_based_recommendations(all_results_df, main_row, top_n=30):
     From a larger DataFrame of related anime, return top_n other anime
     that share at least one genre with the main anime, sorted by
     number of shared genres and score descending.
+
+    If the displayed main_row has weak/missing genre info (e.g. Kitsu or relations),
+    try to fall back to a Jikan row with the same/similar title that has genres.
     """
     main_genres = str(main_row.get("genres") or "")
+
+    if not main_genres.strip():
+        same_title_mask = (
+            (all_results_df["provider"] == "jikan") &
+            (all_results_df["title"].astype(str).str.lower() ==
+             str(main_row.get("title") or "").strip().lower()) &
+            (all_results_df["genres"].astype(str).str.strip() != "")
+        )
+        if same_title_mask.any():
+            fallback_row = all_results_df[same_title_mask].iloc[0]
+            main_genres = str(fallback_row.get("genres") or "")
+
     if not main_genres.strip():
         return pd.DataFrame()
 

@@ -6,7 +6,7 @@ from anime_recommender import (
     search_all_providers,
     get_genre_based_recommendations,
     get_same_title_group_sorted,
-    get_series_group_with_relations,  # NEW
+    get_series_group_with_relations,
 )
 
 st.set_page_config(page_title="Anime Recommender", page_icon="🎌")
@@ -112,7 +112,10 @@ if st.button("Search"):
 
             genre_recs = get_genre_based_recommendations(combined_sorted, best, top_n=30)
             if genre_recs.empty:
-                st.write("Not enough genre information to generate recommendations.")
+                st.write(
+                    "Not enough usable genre information across providers for this title. "
+                    "Try another anime or a more popular series."
+                )
             else:
                 recs_table = genre_recs[[
                     "title", "score", "total_episodes", "status", "genres", "provider"
