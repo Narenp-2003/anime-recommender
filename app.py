@@ -55,7 +55,7 @@ if st.button("Search"):
             st.write(f"**Provider:** {best['provider']}")
             st.write(f"**Score:** {best['score']}")
 
-            # NEW: show fuzzy title match score and warn if weak
+            # Show fuzzy title match score and warn if weak
             match_strength = float(best.get("simple_match") or 0)
             st.write(f"**Title match score:** {match_strength:.2f} (1.0 = perfect match)")
             if match_strength < 0.85:
@@ -97,6 +97,9 @@ if st.button("Search"):
             if same_series_df.empty:
                 st.write("No additional entries for this series found across providers.")
             else:
+                # Reset index so numbering is 0,1,2,... instead of original indices
+                same_series_df = same_series_df.reset_index(drop=True)
+
                 series_table = same_series_df[[
                     "title", "type", "total_episodes", "status", "start_date", "end_date", "provider"
                 ]].copy()
@@ -139,6 +142,8 @@ if st.button("Search"):
             table_df = combined_sorted[[
                 "title", "score", "total_episodes", "status", "provider", "simple_match"
             ]].copy()
+            # Reset index here too so numbering is clean
+            table_df = table_df.reset_index(drop=True)
 
             table_df.rename(columns={
                 "title": "Title",
