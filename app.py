@@ -13,7 +13,6 @@ st.set_page_config(page_title="Anime Recommender", page_icon="🎌")
 st.title("Anime Recommender 🎌")
 st.write("Enter an anime name. The app will query multiple sources and show what is actually known.")
 
-
 # Single text input with 200 character limit
 query = st.text_input(
     "Anime name:",
@@ -55,6 +54,15 @@ if st.button("Search"):
             st.write(f"**Title:** {best['title']}")
             st.write(f"**Provider:** {best['provider']}")
             st.write(f"**Score:** {best['score']}")
+
+            # NEW: show fuzzy title match score and warn if weak
+            match_strength = float(best.get("simple_match") or 0)
+            st.write(f"**Title match score:** {match_strength:.2f} (1.0 = perfect match)")
+            if match_strength < 0.85:
+                st.info(
+                    "This is a partial/approximate title match. "
+                    "Check the title and provider before trusting the timeline and recommendations."
+                )
 
             # Total episodes (transparent)
             total_eps = best.get("total_episodes")
