@@ -12,7 +12,6 @@ from anime_recommender import (
 from offline_mal_model import build_offline_model
 from sklearn.metrics.pairwise import linear_kernel
 
-
 st.set_page_config(page_title="Anime Recommender", page_icon="🎌", layout="wide")
 
 st.title("Anime Recommender 🎌")
@@ -32,11 +31,11 @@ def _normalize_status_col(s):
     return (
         s.fillna("Currently airing")
          .replace(
-             {
-                 "None": "Currently airing",
-                 "Ongoing": "Currently airing",
-                 "On going": "Currently airing",
-             }
+            {
+                "None": "Currently airing",
+                "Ongoing": "Currently airing",
+                "On going": "Currently airing",
+            }
          )
     )
 
@@ -64,6 +63,14 @@ if query.strip():
 
         with col_left:
             st.subheader("Best match")
+
+            # Cover image if available
+            img_url = None
+            if "image_url" in best.index and pd.notna(best["image_url"]):
+                img_url = best["image_url"]
+            if img_url:
+                st.image(img_url, width=220)
+
             st.write(f"**Title:** {best['title']}")
             st.write(f"**Provider:** {best['provider']}")
             if pd.notna(best.get("score")):
@@ -114,9 +121,12 @@ if query.strip():
             if series_df.empty:
                 st.info("Not enough information to build a series timeline.")
             else:
-                series_table = series_df[
-                    ["title", "type", "total_episodes", "status", "score", "provider"]
-                ].copy()
+                base_cols = ["title", "type", "total_episodes", "status", "score", "provider"]
+                cols = base_cols
+                if "image_url" in series_df.columns:
+                    cols = ["image_url"] + base_cols
+
+                series_table = series_df[cols].copy()
                 series_table["status"] = _normalize_status_col(series_table["status"])
                 series_table.rename(
                     columns={
@@ -126,6 +136,7 @@ if query.strip():
                         "status": "Status",
                         "score": "Score",
                         "provider": "Provider",
+                        "image_url": "Image",
                     },
                     inplace=True,
                 )
