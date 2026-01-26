@@ -9,7 +9,8 @@ from anime_recommender import (
     get_best_synopsis,
 )
 
-from offline_mal_model import get_offline_similar_by_title  # NEW
+from offline_mal_model import build_offline_model
+from sklearn.metrics.pairwise import linear_kernel
 
 
 st.set_page_config(page_title="Anime Recommender", page_icon="🎌", layout="wide")
@@ -33,6 +34,12 @@ def _normalize_status_col(s):
              }
          )
     )
+
+
+@st.cache_resource
+def get_offline_model():
+    # Cached across Streamlit reruns
+    return build_offline_model()
 
 
 if query.strip():
@@ -256,24 +263,41 @@ if query.strip():
                     st.dataframe(recs_table, use_container_width=True)
 
         else:
-            st.subheader("Offline MAL content-based recommendations (Kaggle MyAnimeList)")
+            st.subheader("Offline MAL content-based recommendations (MyAnimeList dataset)")
             top_n_offline = st.slider("Max recommendations (offline)", 10, 50, 30, 5)
 
-            with st.spinner("Computing offline content-based recommendations..."):
-                offline_df = get_offline_similar_by_title(best["title"], top_n=top_n_offline)
+            with st.spinner("Loading offline model (first time may take a bit)..."):
+                df_off, tfidf_matrix = get_offline_model()
 
-            if offline_df.empty:
+            t = best["title"].strip().lower()
+            mask = df_off["title_display"].astype(str).str.lower().str.contains(t)
+            candidates = df_off[mask]
+            if candidates.empty:
                 st.info("No offline recommendations found for this title in the MAL dataset.")
             else:
-                table = offline_df.rename(
-                    columns={
-                        "title_display": "Title",
-                        "score": "MAL Score",
-                        "episodes": "Episodes",
-                        "similarity": "Similarity",
-                    }
-                )
-                st.dataframe(table, use_container_width=True)
+                if "score" in candidates.columns:
+                    best_idx = candidates["score"].fillna(0).astype(float).idxmax()
+                else:
+                    best_idx = candidates.index[0]
+
+                if best_idx not in df_off.index:
+                    st.info("No offline recommendations found for this title in the MAL dataset.")
+                else:
+                    cosine_sim = linear_kernel(tfidf_matrix[best_idx], tfidf_matrix).flatten()
+                    df_out = df_off.copy()
+                    df_out["similarity"] = cosine_sim
+                    df_out = df_out[df_out.index != best_idx]
+                    df_out = df_out.sort_values("similarity", ascending=False).head(top_n_offline)
+
+                    table = df_out.rename(
+                        columns={
+                            "title_display": "Title",
+                            "score": "MAL Score",
+                            "episodes": "Episodes",
+                            "similarity": "Similarity",
+                        }
+                    )
+                    st.dataframe(table, use_container_width=True)
 
 else:
     st.info("Type an anime title above to get started.")
