@@ -140,7 +140,13 @@ if query.strip():
                     },
                     inplace=True,
                 )
-                st.dataframe(series_table, use_container_width=True)
+                st.dataframe(
+                    series_table,
+                    column_config={
+                        "Image": st.column_config.ImageColumn("Image", width="small"),
+                    },
+                    use_container_width=True,
+                )
 
         # ---- Search results ----
         st.markdown("---")

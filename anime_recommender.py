@@ -11,6 +11,7 @@ ANILIST_URL = "https://graphql.anilist.co"
 
 # ========= small utilities =========
 
+
 def _safe_get(url, params=None, headers=None, timeout=10):
     try:
         resp = requests.get(url, params=params, headers=headers or {}, timeout=timeout)
@@ -115,6 +116,7 @@ def _title_match_score(user_title: str, all_titles):
 
 # ========= Jikan =========
 
+
 def jikan_search_anime(query, limit=10):
     params = {"q": query, "limit": limit, "order_by": "score", "sort": "desc"}
     data = _safe_get(JIKAN_BASE_URL, params=params)
@@ -134,6 +136,9 @@ def jikan_search_anime(query, limit=10):
             item.get("demographics"),
         )
 
+        img = (item.get("images") or {}).get("jpg", {})  # image block
+        image_url = img.get("image_url")
+
         rows.append(
             {
                 "provider": "Jikan",
@@ -147,6 +152,7 @@ def jikan_search_anime(query, limit=10):
                 "genres": genres_str,
                 "start_date": _parse_start_date_from_aired(item.get("aired")),
                 "synopsis": item.get("synopsis") or "",
+                "image_url": image_url,
                 "raw": item,
             }
         )
@@ -187,6 +193,9 @@ def jikan_fetch_relations(mal_id):
                 item.get("demographics"),
             )
 
+            img = (item.get("images") or {}).get("jpg", {})
+            image_url = img.get("image_url")
+
             rows.append(
                 {
                     "provider": "JikanRel",
@@ -201,6 +210,7 @@ def jikan_fetch_relations(mal_id):
                     "start_date": _parse_start_date_from_aired(item.get("aired")),
                     "synopsis": item.get("synopsis") or "",
                     "relation_type": relation_type,
+                    "image_url": image_url,
                     "raw": item,
                 }
             )
@@ -226,9 +236,11 @@ def jikan_fetch_by_genres(genre_names, limit_per_genre=25, global_limit=200):
         if isinstance(g.get("name"), str) and g.get("mal_id") is not None
     }
 
-    genre_ids = [str(name_to_id[n.strip().lower()])
-                 for n in genre_names
-                 if name_to_id.get(n.strip().lower()) is not None]
+    genre_ids = [
+        str(name_to_id[n.strip().lower()])
+        for n in genre_names
+        if name_to_id.get(n.strip().lower()) is not None
+    ]
 
     if not genre_ids:
         return pd.DataFrame()
@@ -256,6 +268,9 @@ def jikan_fetch_by_genres(genre_names, limit_per_genre=25, global_limit=200):
                 item.get("demographics"),
             )
 
+            img = (item.get("images") or {}).get("jpg", {})
+            image_url = img.get("image_url")
+
             rows.append(
                 {
                     "provider": "JikanGenre",
@@ -269,6 +284,7 @@ def jikan_fetch_by_genres(genre_names, limit_per_genre=25, global_limit=200):
                     "genres": genres_str,
                     "start_date": _parse_start_date_from_aired(item.get("aired")),
                     "synopsis": item.get("synopsis") or "",
+                    "image_url": image_url,
                     "raw": item,
                 }
             )
@@ -282,6 +298,7 @@ def jikan_fetch_by_genres(genre_names, limit_per_genre=25, global_limit=200):
 
 
 # ========= Kitsu =========
+
 
 def kitsu_search_anime(query, limit=10):
     params = {"filter[text]": query, "page[limit]": limit}
@@ -311,6 +328,9 @@ def kitsu_search_anime(query, limit=10):
         if canonical_title:
             all_titles.add(canonical_title.strip())
 
+        poster = attrs.get("posterImage") or {}
+        image_url = poster.get("small") or poster.get("original")
+
         score = attrs.get("averageRating")
         rows.append(
             {
@@ -325,6 +345,7 @@ def kitsu_search_anime(query, limit=10):
                 "genres": "",  # not fetched
                 "start_date": attrs.get("startDate"),
                 "synopsis": attrs.get("synopsis") or "",
+                "image_url": image_url,
                 "raw": item,
             }
         )
@@ -333,6 +354,7 @@ def kitsu_search_anime(query, limit=10):
 
 
 # ========= AniList =========
+
 
 def anilist_search_anime(query, limit=10):
     if not query or not isinstance(query, str):
@@ -352,6 +374,7 @@ def anilist_search_anime(query, limit=10):
           genres
           startDate { year month day }
           description(asHtml: false)
+          coverImage { large extraLarge }
         }
       }
     }
@@ -405,6 +428,9 @@ def anilist_search_anime(query, limit=10):
 
         desc = m.get("description") or ""
 
+        cover = m.get("coverImage") or {}
+        image_url = cover.get("extraLarge") or cover.get("large")
+
         rows.append(
             {
                 "provider": "AniList",
@@ -418,6 +444,7 @@ def anilist_search_anime(query, limit=10):
                 "genres": genres_str,
                 "start_date": start_date,
                 "synopsis": desc if isinstance(desc, str) else "",
+                "image_url": image_url,
                 "raw": m,
             }
         )
@@ -426,6 +453,7 @@ def anilist_search_anime(query, limit=10):
 
 
 # ========= high-level search =========
+
 
 def search_all_providers(query: str, limit=10):
     jikan_df = jikan_search_anime(query, limit=limit)
@@ -455,6 +483,7 @@ def search_all_providers(query: str, limit=10):
 
 
 # ========= grouping / relations =========
+
 
 def get_same_title_group_sorted(all_results_df, main_row):
     if all_results_df.empty or main_row is None:
@@ -519,6 +548,7 @@ def get_series_group_with_relations(all_results_df, best_row):
 
 # ========= synopsis helper =========
 
+
 def get_best_synopsis(all_results_df, best_row):
     syn = best_row.get("synopsis")
     if isinstance(syn, str) and syn.strip():
@@ -541,6 +571,7 @@ def get_best_synopsis(all_results_df, best_row):
 
 
 # ========= genre-based recs =========
+
 
 def get_genre_based_recommendations(all_results_df, main_row, top_n=30):
     if all_results_df.empty or main_row is None:
@@ -614,6 +645,7 @@ def get_genre_based_recommendations(all_results_df, main_row, top_n=30):
 
 
 # ========= CLI demo =========
+
 
 def cli_demo():
     q = input("Enter anime title: ").strip()
