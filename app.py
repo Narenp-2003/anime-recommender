@@ -18,9 +18,14 @@ st.set_page_config(page_title="Anime Recommender", page_icon="🎌", layout="wid
 st.title("Anime Recommender 🎌")
 st.caption("Find the best entry point, series timeline, and similar-genre anime across multiple sources.")
 
-
-query = st.text_input("Search anime title", "")
-search_limit = st.slider("Max results per provider", 5, 30, 15, 5)
+# ---- Sidebar controls ----
+with st.sidebar:
+    st.header("Search & settings")
+    query = st.text_input("Search anime title", "")
+    search_limit = st.slider("Max results per provider", 5, 30, 15, 5)
+    st.markdown("---")
+    theme_pref = st.radio("Theme preference (for future)", ["System", "Light", "Dark"], index=0)
+    st.caption("Use the main area for timelines and recommendations.")
 
 
 def _normalize_status_col(s):
@@ -70,6 +75,24 @@ if query.strip():
             if not isinstance(status_val, str) or not status_val.strip() or status_val == "None":
                 status_val = "Currently airing"
             st.write(f"**Status:** {status_val}")
+
+            # Quick info chips: type · year · status
+            info_bits = []
+            if pd.notna(best.get("type")):
+                info_bits.append(str(best["type"]))
+
+            if pd.notna(best.get("start_date")):
+                year = str(best["start_date"]).split("-")[0]
+                if year and year != "NaT":
+                    info_bits.append(year)
+
+            status_short = status_val
+            if isinstance(status_short, str):
+                status_short = status_short.replace("Currently airing", "Airing")
+                info_bits.append(status_short)
+
+            if info_bits:
+                st.write(" · ".join(info_bits))
 
             synopsis_text = get_best_synopsis(results, best)
             if isinstance(synopsis_text, str) and synopsis_text.strip():
