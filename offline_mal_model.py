@@ -1,4 +1,3 @@
-import os
 from pathlib import Path
 import pandas as pd
 from sklearn.feature_extraction.text import TfidfVectorizer
@@ -6,8 +5,8 @@ from sklearn.feature_extraction.text import TfidfVectorizer
 # Global cache
 _ANIME_DF = None
 
-# Resolve dataset path relative to this file:
-# <repo_root>/data/anime_cleaned.csv
+# repo_root/offline_mal_model.py
+# repo_root/data/anime_cleaned.csv
 BASE_DIR = Path(__file__).resolve().parent
 DATASET_PATH = BASE_DIR / "data"
 ANIME_FILENAME = "anime_cleaned.csv"
@@ -26,7 +25,7 @@ def _load_anime_df() -> pd.DataFrame:
     if not ANIME_PATH.exists():
         raise FileNotFoundError(
             f"{ANIME_FILENAME} not found at {ANIME_PATH}. "
-            "Make sure it is bundled in the repo under data/."
+            "Make sure it is committed under data/."
         )
 
     df = pd.read_csv(ANIME_PATH)
@@ -34,12 +33,10 @@ def _load_anime_df() -> pd.DataFrame:
     # Limit size for speed / memory
     df = df.head(15000)
 
-    # Keep only columns that actually exist
     wanted = ["mal_id", "title_english", "title", "synopsis", "genre", "score", "episodes"]
     cols = [c for c in wanted if c in df.columns]
     df = df[cols].copy()
 
-    # Unified title: prefer English + original title
     if "title_english" in df.columns:
         title_eng = df["title_english"].fillna("").astype(str)
     else:
@@ -55,7 +52,6 @@ def _load_anime_df() -> pd.DataFrame:
         empty_mask = df["title_display"] == ""
         df.loc[empty_mask, "title_display"] = df.loc[empty_mask, "title"].astype(str)
 
-    # Build text field for TF‑IDF using whatever exists
     if "synopsis" in df.columns:
         synopsis = df["synopsis"].fillna("").astype(str)
     else:
