@@ -137,7 +137,7 @@ def jikan_search_anime(query, limit=10):
             item.get("demographics"),
         )
 
-        img = (item.get("images") or {}).get("jpg", {})  # image block
+        img = (item.get("images") or {}).get("jpg", {})
         image_url = img.get("image_url")
 
         rows.append(
@@ -343,7 +343,7 @@ def kitsu_search_anime(query, limit=10):
                 "total_episodes": attrs.get("episodeCount"),
                 "status": attrs.get("status") or "",
                 "score": float(score) / 10.0 if score else None,
-                "genres": "",  # not fetched
+                "genres": "",
                 "start_date": attrs.get("startDate"),
                 "synopsis": attrs.get("synopsis") or "",
                 "image_url": image_url,
@@ -634,16 +634,22 @@ def get_genre_based_recommendations(all_results_df, main_row, top_n=30):
     if combined.empty:
         return combined
 
-    # NEW: fuzzy title similarity and combined rec score
     def title_similarity(row):
         titles = row.get("all_titles")
-        return _title_match_score(main_row.get("title", ""), titles) if isinstance(
-            titles, (list, tuple, set)
-        ) else 0.0
+        src_title = main_row.get("title", "")
+        if isinstance(titles, (list, tuple, set)):
+            return _title_match_score(src_title, titles)
+        return 0.0
 
-    combined["title_sim"] = combined.apply(title_similarity, axis=1)
+    if "all_titles" in combined.columns:
+        combined["title_sim"] = combined.apply(title_similarity, axis=1)
+    else:
+        combined["title_sim"] = 0.0
 
-    combined["score"] = combined["score"].astype(float)
+    if "score" in combined.columns:
+        combined["score"] = pd.to_numeric(combined["score"], errors="coerce")
+    else:
+        combined["score"] = None
 
     score_norm = combined["score"].fillna(0.0) / 10.0
     max_shared = max(combined["shared_genres"].max(), 1)
@@ -661,51 +667,3 @@ def get_genre_based_recommendations(all_results_df, main_row, top_n=30):
     combined.drop(columns=["start_date_parsed"], inplace=True, errors="ignore")
 
     return combined.head(top_n)
-
-
-# ========= CLI demo =========
-
-
-def cli_demo():
-    q = input("Enter anime title: ").strip()
-    if not q:
-        print("Empty query.")
-        return
-
-    results = search_all_providers(q, limit=15)
-    if results.empty:
-        print("No reasonably matching results found.")
-        return
-
-    print("\nTop matches:")
-    for idx, row in results.head(10).iterrows():
-        print(f"{idx}: {row['title']} [{row['provider']}] score={row['simple_match']:.2f}")
-
-    best = results.iloc[0]
-    print("\nBest match details:")
-    print(f"Title: {best['title']}")
-    print(f"Provider: {best['provider']}")
-    print(f"Score: {best.get('score')}")
-    print(f"Episodes: {best.get('total_episodes']}")
-    print(f"Status: {best.get('status']}")
-    syn = get_best_synopsis(results, best)
-    if syn:
-        print(f"Synopsis: {syn[:200]}...")
-
-    print("\nSeries group (including relations):")
-    series_df = get_series_group_with_relations(results, best)
-    if not series_df.empty:
-        for _, row in series_df.iterrows():
-            print(f"- {row['title']} [{row['provider']}] type={row['type']} eps={row['total_episodes']}")
-
-    print("\nMore Like This (genre-based):")
-    genre_recs = get_genre_based_recommendations(results, best, top_n=10)
-    if genre_recs.empty:
-        print("Not enough genre information to generate recommendations.")
-    else:
-        for _, row in genre_recs.iterrows():
-            print(f"- {row['title']} [{row['provider']}] shared_genres={row['shared_genres']} rec_score={row['rec_score']:.2f}")
-
-
-if __name__ == "__main__":
-    cli_demo()
