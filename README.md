@@ -1,63 +1,67 @@
-# Anime Recommender (Multi-API, Python + Streamlit)
+# Anime Recommender 🎌
 
-A simple web app that searches anime titles across multiple public APIs (Jikan + Kitsu + placeholder 3rd source), picks the best match, and shows related entries and similar-genre recommendations.
+Streamlit web app to find good entry points, timelines, and similar anime using multiple public APIs plus an optional offline MyAnimeList TF-IDF model.
 
 ## Features
 
-- Multi-provider search:
-  - Jikan (MyAnimeList unofficial) for detailed titles, genres, and dates.
-  - Kitsu for additional metadata.
-  - Third provider hook ready (AnimeDb-style) for future extension.[web:99][web:106][web:101][web:104][web:140]
+- Fuzzy title search across MyAnimeList (Jikan), AniList, and Kitsu APIs. 
+- Series timeline that merges main entries with related works from Jikan relations (movies, OVAs, specials). 
+- Cover images and basic stats (score, episodes, status, year) for the best match and series entries. 
+- Genre-based recommendations using Jikan’s genre endpoints and fuzzy title matching via RapidFuzz. 
+- Optional offline content-based recommendations using a MAL CSV dataset and TF-IDF (cosine similarity). 
 
-- Exact title matching:
-  - Prioritizes exact and soft-exact matches (case-insensitive, ignores small punctuation).
-  - Filters out unrelated entries like "Pokémon Violet" when searching "Violet Evergarden".[web:208][web:162]
+## Tech stack
 
-- Series timeline:
-  - Groups entries belonging to the same series (TV + movies/OVAs/specials) using title heuristics.
-  - Sorts by start date to show a simple release-order view.
+- Python 3.10+
+- Streamlit for the UI
+- Requests + JSON for direct API calls (Jikan, AniList GraphQL, Kitsu REST). 
+- RapidFuzz for fuzzy string matching between user input and titles.
+- Pandas for data handling and basic ranking.
+- scikit-learn for the offline TF-IDF model and cosine similarity. 
 
-- Similar-genre recommendations:
-  - Uses genres from the best match (when available).
-  - Returns up to 30 other anime that share one or more genres, ranked by shared-genre count and score.
+## Project structure
 
-- Transparent data:
-  - Does not guess total episodes or next-season dates.
-  - Clearly labels missing data (e.g., ongoing long-runners where episode counts are not fixed in APIs).[web:106][web:107][web:138][web:173][web:182]
+- `anime_recommender.py`  
+  Core API integration and logic: Jikan/AniList/Kitsu search, series relations, fuzzy title scoring, and genre-based recommendations. 
+- `offline_mal_model.py`  
+  Loads a MyAnimeList anime CSV, builds a TF-IDF representation, and exposes the matrix plus metadata for offline recs. 
+- `app.py`  
+  Streamlit front-end: search bar, best-match card with image, series timeline table, and “More like this” (API + offline) views. 
+- `requirements.txt`  
+  Python dependencies for deployment.
 
-## Tech Stack
+## Setup
 
-- Python (requests, pandas, numpy)
-- Streamlit for the web UI
-- Public anime APIs (Jikan, Kitsu, future extension to others)
+1. Clone the repository and create a virtual environment.
 
-## How to Run
+2. Install dependencies:
 
-git clone https://github.com/Narenp-2003/anime-recommender.git
+   
+   pip install -r requirements.txt
 
-cd anime-recommender
+Prepare the offline MAL dataset (optional but recommended):
 
-python -m venv .venv
+Download a cleaned anime list CSV (e.g. from Kaggle or a MAL dump) with at least: id, title, synopsis/description, score, episodes.
 
-.venv\Scripts\activate
+Update the path and column names in offline_mal_model.py to match your CSV.
 
-pip install -r requirements.txt # or install manually
+Run the app:
 
 streamlit run app.py
 
-
-Then open the URL shown in the terminal (usually http://localhost:8501).
-
-live demo: https://anime-recommender-pq9owtbshe9uahxgwm7rzt.streamlit.app/
-
-Some titles may show ‘No reasonably matching results found’ due to strict exact‑match filtering and API search limitations. Future work: improve fuzzy matching and add ID‑based lookups.
+Usage
+Type an anime title (e.g. “Cowboy Bebop”) in the search box. git push -u origin main
 
 
-## Phase 2 (Planned Improvements)
+Check the best match card and the series timeline to understand viewing order (TV, movie, specials). 
 
-- Use per-anime ID endpoints (e.g., Jikan "full anime by ID") to fetch all related movies/OVAs/sequels for a franchise using official relations fields like "sequel", "side story", etc.[web:240][web:243][web:247]
-- Integrate another rich source (e.g., AniList) for better tags and episode info.
-- Improve recommendation quality with content-based or tag-based similarity.
+Use the “More like this” section:
 
+API-based (genres) for cross-genre recs with filters (type, score, episodes, airing, preferred genres).
 
-  
+Offline MAL model for content-based recs purely from the local MAL dataset.
+
+Notes and API limits
+Jikan is an unofficial MyAnimeList REST API; respect their rate limits and terms of service. 
+
+AniList GraphQL and Kitsu also have usage guidelines; heavy usage may require auth or backoff. 

@@ -3,6 +3,7 @@ import requests
 import pandas as pd
 from rapidfuzz import fuzz  # fuzzy matching
 
+
 JIKAN_BASE_URL = "https://api.jikan.moe/v4/anime"
 KITSU_BASE_URL = "https://kitsu.io/api/edge/anime"
 ANIMEDB_BASE_URL = "https://animedb.docs.apiary.io"  # placeholder
@@ -27,16 +28,16 @@ def _norm_title(s: str) -> str:
         return ""
     return (
         s.lower()
-         .replace("’", "'")
-         .replace("–", "-")
-         .replace("—", "-")
-         .replace(":", " ")
-         .replace("!", " ")
-         .replace("?", " ")
-         .replace(".", " ")
-         .replace(",", " ")
-         .replace("  ", " ")
-         .strip()
+        .replace("’", "'")
+        .replace("–", "-")
+        .replace("—", "-")
+        .replace(":", " ")
+        .replace("!", " ")
+        .replace("?", " ")
+        .replace(".", " ")
+        .replace(",", " ")
+        .replace("  ", " ")
+        .strip()
     )
 
 
@@ -618,7 +619,7 @@ def get_genre_based_recommendations(all_results_df, main_row, top_n=30):
         if not isinstance(title, str):
             return False
         t = title.strip().lower()
-        return main_title in t or t in main_title
+        return t == main_title or t.startswith(main_title + ":") or main_title in t
 
     combined = combined[~combined["title"].apply(is_main_series)].copy()
 
@@ -633,10 +634,28 @@ def get_genre_based_recommendations(all_results_df, main_row, top_n=30):
     if combined.empty:
         return combined
 
+    # NEW: fuzzy title similarity and combined rec score
+    def title_similarity(row):
+        titles = row.get("all_titles")
+        return _title_match_score(main_row.get("title", ""), titles) if isinstance(
+            titles, (list, tuple, set)
+        ) else 0.0
+
+    combined["title_sim"] = combined.apply(title_similarity, axis=1)
+
+    combined["score"] = combined["score"].astype(float)
+
+    score_norm = combined["score"].fillna(0.0) / 10.0
+    max_shared = max(combined["shared_genres"].max(), 1)
+    shared_norm = combined["shared_genres"] / max_shared
+    title_norm = combined["title_sim"]
+
+    combined["rec_score"] = 0.6 * shared_norm + 0.3 * score_norm + 0.1 * title_norm
+
     combined["start_date_parsed"] = pd.to_datetime(combined["start_date"], errors="coerce")
     combined = combined.sort_values(
-        by=["shared_genres", "score", "start_date_parsed"],
-        ascending=[False, False, True],
+        by=["rec_score", "start_date_parsed"],
+        ascending=[False, True],
         na_position="last",
     ).reset_index(drop=True)
     combined.drop(columns=["start_date_parsed"], inplace=True, errors="ignore")
@@ -667,8 +686,8 @@ def cli_demo():
     print(f"Title: {best['title']}")
     print(f"Provider: {best['provider']}")
     print(f"Score: {best.get('score')}")
-    print(f"Episodes: {best.get('total_episodes')}")
-    print(f"Status: {best.get('status')}")
+    print(f"Episodes: {best.get('total_episodes']}")
+    print(f"Status: {best.get('status']}")
     syn = get_best_synopsis(results, best)
     if syn:
         print(f"Synopsis: {syn[:200]}...")
@@ -685,7 +704,7 @@ def cli_demo():
         print("Not enough genre information to generate recommendations.")
     else:
         for _, row in genre_recs.iterrows():
-            print(f"- {row['title']} [{row['provider']}] shared_genres={row['shared_genres']}")
+            print(f"- {row['title']} [{row['provider']}] shared_genres={row['shared_genres']} rec_score={row['rec_score']:.2f}")
 
 
 if __name__ == "__main__":
