@@ -1,12 +1,17 @@
 import os
+from pathlib import Path
 import pandas as pd
 from sklearn.feature_extraction.text import TfidfVectorizer
 
-# Global caches (used if you call this module outside Streamlit)
+# Global cache
 _ANIME_DF = None
 
-# Folder with anime_cleaned.csv
-DATASET_PATH = r"E:\ani_list"  # make sure E:\ani_list\anime_cleaned.csv exists
+# Resolve dataset path relative to this file:
+# <repo_root>/data/anime_cleaned.csv
+BASE_DIR = Path(__file__).resolve().parent
+DATASET_PATH = BASE_DIR / "data"
+ANIME_FILENAME = "anime_cleaned.csv"
+ANIME_PATH = DATASET_PATH / ANIME_FILENAME
 
 
 def _load_anime_df() -> pd.DataFrame:
@@ -18,11 +23,13 @@ def _load_anime_df() -> pd.DataFrame:
     if _ANIME_DF is not None:
         return _ANIME_DF
 
-    anime_path = os.path.join(DATASET_PATH, "anime_cleaned.csv")
-    if not os.path.exists(anime_path):
-        raise FileNotFoundError(f"anime_cleaned.csv not found at {anime_path}")
+    if not ANIME_PATH.exists():
+        raise FileNotFoundError(
+            f"{ANIME_FILENAME} not found at {ANIME_PATH}. "
+            "Make sure it is bundled in the repo under data/."
+        )
 
-    df = pd.read_csv(anime_path)
+    df = pd.read_csv(ANIME_PATH)
 
     # Limit size for speed / memory
     df = df.head(15000)
