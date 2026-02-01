@@ -1,67 +1,80 @@
-# Anime Recommender 🎌
+# Watch Recommender 🎬
 
-Streamlit web app to find good entry points, timelines, and similar anime using multiple public APIs plus an optional offline MyAnimeList TF-IDF model.
+Streamlit app to discover **anime, movies, and TV shows** similar to what you already like.
+
+- Anime: multiple providers + series timeline + genre-based and offline MAL TF‑IDF recommendations.
+- Movies/TV: TMDb search + recommendations, enriched with **IMDb ratings (OMDb)** and **where to watch** via a streaming-availability API.
+- Offline movie/TV model (optional): Netflix / Prime / Disney+ catalogues for future extensions.
 
 ## Features
 
-- Fuzzy title search across MyAnimeList (Jikan), AniList, and Kitsu APIs. 
-- Series timeline that merges main entries with related works from Jikan relations (movies, OVAs, specials). 
-- Cover images and basic stats (score, episodes, status, year) for the best match and series entries. 
-- Genre-based recommendations using Jikan’s genre endpoints and fuzzy title matching via RapidFuzz. 
-- Optional offline content-based recommendations using a MAL CSV dataset and TF-IDF (cosine similarity). 
+### Anime
+- Search across multiple anime providers.
+- Best-match card with image, status, score, and synopsis.
+- Series timeline table with rank and thumbnails.
+- Search results with provider filter and rank.
+- “More like this”:
+  - API-based (genres) with advanced filters and provider selection.
+  - Offline MAL TF‑IDF model for content-based recommendations.
 
-## Tech stack
-
-- Python 3.10+
-- Streamlit for the UI
-- Requests + JSON for direct API calls (Jikan, AniList GraphQL, Kitsu REST). 
-- RapidFuzz for fuzzy string matching between user input and titles.
-- Pandas for data handling and basic ranking.
-- scikit-learn for the offline TF-IDF model and cosine similarity. 
+### Movies & TV
+- TMDb-based search for movies and TV shows.
+- Best-match card with:
+  - TMDb score and votes.
+  - IMDb rating and votes (OMDb).
+  - Streaming platforms (Streaming Availability API).
+- Search results table with rank.
+- “More like this”:
+  - TMDb API mode with filters (score, votes, year) and a hybrid rank score.
+  - TMDb + IMDb mode showing top 10 TMDb recs with IMDb rating.
 
 ## Project structure
 
-- `anime_recommender.py`  
-  Core API integration and logic: Jikan/AniList/Kitsu search, series relations, fuzzy title scoring, and genre-based recommendations. 
-- `offline_mal_model.py`  
-  Loads a MyAnimeList anime CSV, builds a TF-IDF representation, and exposes the matrix plus metadata for offline recs. 
-- `app.py`  
-  Streamlit front-end: search bar, best-match card with image, series timeline table, and “More like this” (API + offline) views. 
-- `requirements.txt`  
-  Python dependencies for deployment.
+Key files:
+
+- `app.py` – Streamlit UI and main logic.
+- `anime_recommender.py` – Anime API integrations and helpers.
+- `offline_mal_model.py` – Offline anime TF‑IDF model (MAL dataset).
+- `movie_recommender.py` – TMDb search and recommendation helpers for movies/TV.
+- `movie_offline_model.py` – (optional) offline movie/TV TF‑IDF model.
+- `online_movie_sources.py` – OMDb + streaming-availability API helpers.
+- `requirements.txt` – Python dependencies.
 
 ## Setup
 
-1. Clone the repository and create a virtual environment.
+### 1. Create and activate virtualenv (Windows)
 
-2. Install dependencies:
+```bash
+python -m venv .venv
+.venv\Scripts\activate
 
-   
-   pip install -r requirements.txt
+2. Install dependencies
+bash
+pip install -r requirements.txt
 
-Prepare the offline MAL dataset (optional but recommended):
+3. Environment variables
+Set these locally (PowerShell):
 
-Download a cleaned anime list CSV (e.g. from Kaggle or a MAL dump) with at least: id, title, synopsis/description, score, episodes.
+setx TMDB_API_KEY "your_tmdb_key_here"
+setx OMDB_API_KEY "your_omdb_key_here"
+setx STREAMING_API_KEY "your_streaming_api_key_here"
 
-Update the path and column names in offline_mal_model.py to match your CSV.
+For Streamlit Community Cloud, add the same keys in Secrets:
 
-Run the app:
+TMDB_API_KEY = "your_tmdb_key_here"
+OMDB_API_KEY = "your_omdb_key_here"
+STREAMING_API_KEY = "your_streaming_api_key_here"
 
-streamlit run app.py
+Open the URL shown in the terminal (usually http://localhost:8501).
 
-Usage
-Type an anime title (e.g. “Cowboy Bebop”) in the search box. git push -u origin main
+Deployment (Streamlit Community Cloud)
+Push this project to GitHub.
 
+Go to https://streamlit.io/cloud and create a new app.
 
-Check the best match card and the series timeline to understand viewing order (TV, movie, specials). 
+Select your repo, branch, and app.py as the entry file.
 
-Use the “More like this” section:
+Add the API keys in “Secrets”.
 
-API-based (genres) for cross-genre recs with filters (type, score, episodes, airing, preferred genres).
+Deploy – the app will auto-update on every git push
 
-Offline MAL model for content-based recs purely from the local MAL dataset.
-
-Notes and API limits
-Jikan is an unofficial MyAnimeList REST API; respect their rate limits and terms of service. 
-
-AniList GraphQL and Kitsu also have usage guidelines; heavy usage may require auth or backoff. 
