@@ -75,9 +75,9 @@ def _build_text_column(df: pd.DataFrame) -> pd.Series:
 
 def _load_all() -> pd.DataFrame:
     providers = [
-        ("netflix_titles.xlsx", "Netflix"),
-        ("amazon_prime_titles.xlsx", "Prime Video"),
-        ("disney_plus_titles.xlsx", "Disney+"),
+        ("netflix_titles.XLS", "Netflix"),
+        ("amazon_prime_titles.XLS", "Prime Video"),
+        ("disney_plus_titles.XLS", "Disney+"),
     ]
     frames = []
     for fname, name in providers:
