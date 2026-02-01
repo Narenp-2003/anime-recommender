@@ -12,22 +12,41 @@ from anime_recommender import (
 from offline_mal_model import build_offline_model
 from sklearn.metrics.pairwise import linear_kernel
 
-
 st.set_page_config(page_title="Anime Recommender", page_icon="🎌", layout="wide")
 
 st.title("Anime Recommender 🎌")
 st.caption("Find the best entry point, series timeline, and similar-genre anime across multiple sources.")
 
+# ---- Session state ----
+if "current_anime" not in st.session_state:
+    st.session_state.current_anime = None
+if "last_query" not in st.session_state:
+    st.session_state.last_query = ""
+if "search_history" not in st.session_state:
+    st.session_state.search_history = []
 
 # ---- Sidebar controls ----
 with st.sidebar:
     st.header("Search & settings")
-    query = st.text_input("Search anime title", "")
+    query = st.text_input("Search anime title", st.session_state.last_query)
     search_limit = st.slider("Max results per provider", 5, 30, 15, 5)
     st.markdown("---")
     theme_pref = st.radio("Theme preference (for future)", ["System", "Light", "Dark"], index=0)
     st.caption("Use the main area for timelines and recommendations.")
 
+    if st.button("Search", type="primary"):
+        st.session_state.current_anime = None
+        st.session_state.last_query = query
+        if query.strip():
+            if query not in st.session_state.search_history:
+                st.session_state.search_history.append(query)
+
+    if st.session_state.search_history:
+        st.subheader("Recent searches")
+        for q in reversed(st.session_state.search_history[-5:]):
+            if st.button(q, key=f"hist_{q}"):
+                st.session_state.last_query = q
+                st.experimental_rerun()
 
 def _normalize_status_col(s):
     return (
@@ -41,11 +60,9 @@ def _normalize_status_col(s):
         )
     )
 
-
 @st.cache_resource
 def get_offline_model():
     return build_offline_model()
-
 
 @st.cache_data(show_spinner=False)
 def cached_genre_recs(results_df: pd.DataFrame, best_row: dict, top_n: int):
@@ -65,15 +82,21 @@ def cached_genre_recs(results_df: pd.DataFrame, best_row: dict, top_n: int):
     safe_df = results_df[existing].copy()
     return get_genre_based_recommendations(safe_df, best_row, top_n=top_n)
 
+# ---- Main ----
+active_query = st.session_state.last_query or query
 
-if query.strip():
+if active_query.strip():
     with st.spinner("Searching across providers..."):
-        results = search_all_providers(query, limit=search_limit)
+        results = search_all_providers(active_query, limit=search_limit)
 
     if results.empty:
         st.error("No reasonably matching results found. Try another title or spelling.")
     else:
-        best = results.iloc[0]
+        if st.session_state.current_anime is None:
+            best = results.iloc[0]
+            st.session_state.current_anime = best.to_dict()
+        else:
+            best = pd.Series(st.session_state.current_anime)
 
         # ---- Best match + series ----
         st.markdown("---")
