@@ -1,97 +1,107 @@
 import os
-from typing import Optional, Dict, Any
-
 import requests
 
-
 TMDB_API_KEY = os.getenv("TMDB_API_KEY")
-OMDB_API_KEY = os.getenv("OMDB_API_KEY")          # e.g. 4c49e026
-STREAMING_API_KEY = os.getenv("STREAMING_API_KEY")  # e.g. 9dnsjgw52ad2
-
-TMDB_BASE = "https://api.themoviedb.org/3"
-OMDB_BASE = "https://www.omdbapi.com/"
-STREAMING_BASE = "https://streaming-availability.p.rapidapi.com"
+OMDB_API_KEY = os.getenv("OMDB_API_KEY")
+STREAMING_API_KEY = os.getenv("STREAMING_API_KEY")
 
 
-def _safe_get(url: str, params: Dict[str, Any], headers: Optional[Dict[str, str]] = None) -> Optional[dict]:
-    try:
-        r = requests.get(url, params=params, headers=headers, timeout=10)
-        if r.status_code != 200:
-            return None
-        return r.json()
-    except Exception:
-        return None
-
-
-def fetch_omdb_for_tmdb(title: str, year: Optional[int] = None) -> Optional[dict]:
-    """
-    IMDb-style data for a movie/series from OMDb using title+year.
-    """
+def fetch_omdb_for_tmdb(title: str, year: int | None):
     if not OMDB_API_KEY:
         return None
 
     params = {
-        "apikey": OMDB_API_KEY,
         "t": title,
+        "apikey": OMDB_API_KEY,
     }
     if year:
-        params["y"] = str(year)
+        params["y"] = year
 
-    data = _safe_get(OMDB_BASE, params)
-    if not data or data.get("Response") != "True":
+    try:
+        resp = requests.get("https://www.omdbapi.com/", params=params, timeout=10)
+        resp.raise_for_status()
+        data = resp.json()
+        if data.get("Response") != "True":
+            return None
+        return data
+    except Exception:
         return None
-    return data
 
 
-def fetch_streaming_availability(title: str, year: Optional[int] = None, country: str = "IN") -> Optional[dict]:
+def fetch_streaming_availability(title: str, year: int | None, country: str = "IN"):
     """
-    Where to watch a title using Streaming Availability API (RapidAPI).
+    Uses a Streaming Availability–style API (RapidAPI) to find legal platforms.
+    Adjust `url`, headers, and JSON keys if your provider is slightly different.
     """
     if not STREAMING_API_KEY:
-        return None
+        return []
 
+    url = "https://streaming-availability.p.rapidapi.com/search/title"
     headers = {
-        "x-rapidapi-key": STREAMING_API_KEY,
-        "x-rapidapi-host": "streaming-availability.p.rapidapi.com",
+        "X-RapidAPI-Key": STREAMING_API_KEY,
+        "X-RapidAPI-Host": "streaming-availability.p.rapidapi.com",
     }
-
     params = {
         "title": title,
         "country": country,
-        "show_type": "movie_or_series",
+        "output_language": "en",
+        "show_type": "all",
+        "series_granularity": "show",
     }
     if year:
-        params["year"] = str(year)
+        params["year"] = year
 
-    url = f"{STREAMING_BASE}/search/title"
-    data = _safe_get(url, params, headers=headers)
-    if not data:
-        return None
-    return data
+    try:
+        resp = requests.get(url, headers=headers, params=params, timeout=10)
+        resp.raise_for_status()
+        data = resp.json()
+    except Exception:
+        return []
+
+    results = data.get("result") or []
+    if not results:
+        return []
+
+    item = results[0]
+    streaming_info = item.get("streamingInfo") or {}
+    providers = []
+
+    # streamingInfo structure: { "netflix": { "in": [ { "link": "https://..." }, ... ] }, ... }
+    for provider_name, regions in streaming_info.items():
+        region_info = regions.get(country.lower()) or regions.get(country.upper())
+        if not region_info:
+            continue
+        for entry in region_info:
+            url_link = entry.get("link") or entry.get("url")
+            if url_link:
+                providers.append(
+                    {
+                        "name": provider_name.capitalize(),
+                        "url": url_link,
+                    }
+                )
+
+    return providers
 
 
-def summarize_streaming_providers(streaming_data: dict) -> str:
+def summarize_streaming_providers(providers: list[dict]):
     """
-    Turn streaming-availability JSON into a short string like:
-    'Netflix, Prime Video, Disney+'.
+    Deduplicate by provider name and return:
+    - list of {name, url}
+    - simple comma-separated label (optional)
     """
-    if not streaming_data:
-        return ""
-
-    items = streaming_data.get("result") or streaming_data.get("titles") or []
-    if not items:
-        return ""
-
-    first = items[0]
-    offers = first.get("streamingInfo") or {}
-    providers = set()
-
-    # Example schema: {"in": {"netflix": {...}, "prime": {...}}}
-    for country_info in offers.values():
-        for provider_name in country_info.keys():
-            providers.add(provider_name.title())
-
     if not providers:
-        return ""
+        return [], ""
 
-    return ", ".join(sorted(providers))
+    seen = {}
+    for p in providers:
+        name = p.get("name")
+        url = p.get("url")
+        if not name:
+            continue
+        if name not in seen:
+            seen[name] = url
+
+    out_list = [{"name": n, "url": u} for n, u in seen.items()]
+    label = ", ".join(p["name"] for p in out_list)
+    return out_list, label

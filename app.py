@@ -583,7 +583,7 @@ if active_query.strip():
             streaming_data = fetch_streaming_availability(
                 best["title"], year_int, country="IN"
             )
-            streaming_summary = summarize_streaming_providers(streaming_data)
+            providers, streaming_summary = summarize_streaming_providers(streaming_data)
 
             st.markdown("---")
             st.header(f"Best match ({active_type})")
@@ -613,8 +613,18 @@ if active_query.strip():
                     if imdb_votes and imdb_votes != "N/A":
                         st.write(f"**IMDb votes:** {imdb_votes}")
 
-                if streaming_summary:
-                    st.write(f"**Available on:** {streaming_summary}")
+                if providers:
+                    links = []
+                    for p in providers:
+                        name = p.get("name")
+                        url = p.get("url")
+                        if not name:
+                            continue
+                        if url:
+                            links.append(f"[{name}]({url})")
+                        else:
+                            links.append(name)
+                    st.markdown("**Available on:** " + " · ".join(links))
 
                 if isinstance(best.get("overview"), str) and best["overview"].strip():
                     with st.expander("Overview", expanded=False):
