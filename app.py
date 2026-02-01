@@ -19,6 +19,12 @@ from movie_recommender import (
     get_tv_recommendations,
 )
 
+from online_movie_sources import (
+    fetch_omdb_for_tmdb,
+    fetch_streaming_availability,
+    summarize_streaming_providers,
+)
+
 CONTENT_TYPES = ["Anime", "Movies", "TV"]
 
 st.set_page_config(page_title="Watch Recommender", page_icon="🎬", layout="wide")
@@ -66,7 +72,6 @@ with st.sidebar:
     if st.button("Search", type="primary"):
         st.session_state.last_query = query
         st.session_state.current_anime = None
-        # always follow the radio’s value
         st.session_state.current_content_type = st.session_state.content_type_radio
         if query.strip() and query not in st.session_state.search_history:
             st.session_state.search_history.append(query)
@@ -100,7 +105,6 @@ def get_offline_model():
 
 @st.cache_data(show_spinner=False)
 def cached_genre_recs(results_df: pd.DataFrame, best_row: dict, top_n: int):
-    # Make a copy and stringify any list-like columns so hashing works
     df = results_df.copy()
     for col in df.columns:
         if df[col].dtype == "object":
@@ -129,7 +133,6 @@ def cached_genre_recs(results_df: pd.DataFrame, best_row: dict, top_n: int):
 
 # ---- Main ----
 active_query = st.session_state.last_query or query
-# Always trust the current radio selection
 active_type = st.session_state.get("content_type_radio", "Anime")
 
 if active_query.strip():
@@ -556,6 +559,19 @@ if active_query.strip():
             # ---- Movie / TV flow ----
             best = results.iloc[0]
 
+            year_val = None
+            if active_type == "Movies" and pd.notna(best.get("release_date")):
+                year_val = str(best["release_date"]).split("-")[0]
+            elif active_type != "Movies" and pd.notna(best.get("first_air_date")):
+                year_val = str(best["first_air_date"]).split("-")[0]
+            year_int = int(year_val) if year_val and year_val.isdigit() else None
+
+            omdb_data = fetch_omdb_for_tmdb(best["title"], year_int)
+            streaming_data = fetch_streaming_availability(
+                best["title"], year_int, country="IN"
+            )
+            streaming_summary = summarize_streaming_providers(streaming_data)
+
             st.markdown("---")
             st.header(f"Best match ({active_type})")
 
@@ -575,6 +591,17 @@ if active_query.strip():
                     st.write(f"**TMDb score:** {best['score']:.1f}")
                 if pd.notna(best.get("vote_count")):
                     st.write(f"**Votes:** {int(best['vote_count'])}")
+
+                if omdb_data:
+                    imdb_rating = omdb_data.get("imdbRating")
+                    imdb_votes = omdb_data.get("imdbVotes")
+                    if imdb_rating and imdb_rating != "N/A":
+                        st.write(f"**IMDb rating:** {imdb_rating}")
+                    if imdb_votes and imdb_votes != "N/A":
+                        st.write(f"**IMDb votes:** {imdb_votes}")
+
+                if streaming_summary:
+                    st.write(f"**Available on:** {streaming_summary}")
 
                 if isinstance(best.get("overview"), str) and best["overview"].strip():
                     with st.expander("Overview", expanded=False):
@@ -607,60 +634,117 @@ if active_query.strip():
             st.markdown("---")
             st.header("More like this")
 
-            # Get a bigger pool so filters have room
-            if active_type == "Movies":
-                recs = get_movie_recommendations(best, limit=50)
-            else:
-                recs = get_tv_recommendations(best, limit=50)
+            mode_mv = st.radio(
+                "Recommendation source",
+                ["TMDb API", "TMDb + IMDb (top 10 only)"],
+                index=0,
+            )
 
-            if recs.empty:
-                st.info("No recommendations found from TMDb.")
-            else:
-                # --- Filters for TMDb recs ---
-                colf1, colf2, colf3 = st.columns(3)
-                with colf1:
-                    min_score = st.slider("Min TMDb score", 0.0, 10.0, 6.0, 0.5)
-                with colf2:
-                    min_votes = st.number_input("Min votes", 0, 50000, 100)
-                with colf3:
-                    year_filter = st.text_input("Year (optional)", "")
-
-                recs_f = recs.copy()
-                recs_f = recs_f[recs_f["score"].fillna(0) >= min_score]
-                recs_f = recs_f[recs_f["vote_count"].fillna(0) >= min_votes]
-
-                date_col_rec = (
-                    "release_date" if active_type == "Movies" else "first_air_date"
-                )
-                if year_filter.strip() and date_col_rec in recs_f.columns:
-                    y = year_filter.strip()
-                    recs_f = recs_f[
-                        recs_f[date_col_rec].astype(str).str.startswith(y)
-                    ]
-
-                if recs_f.empty:
-                    st.info("No recommendations match the selected filters.")
+            if mode_mv == "TMDb API":
+                if active_type == "Movies":
+                    recs = get_movie_recommendations(best, limit=50)
                 else:
-                    # --- Hybrid rank: score + votes ---
-                    score_norm = recs_f["score"].fillna(0) / 10.0
-                    votes_raw = recs_f["vote_count"].fillna(0)
-                    vmax = max(votes_raw.max(), 1)
-                    votes_norm = votes_raw / vmax
+                    recs = get_tv_recommendations(best, limit=50)
 
-                    recs_f["rank_score"] = 0.7 * score_norm + 0.3 * votes_norm
-                    recs_f = recs_f.sort_values("rank_score", ascending=False)
+                if recs.empty:
+                    st.info("No recommendations found from TMDb.")
+                else:
+                    colf1, colf2, colf3 = st.columns(3)
+                    with colf1:
+                        min_score = st.slider("Min TMDb score", 0.0, 10.0, 6.0, 0.5)
+                    with colf2:
+                        min_votes = st.number_input("Min votes", 0, 50000, 100)
+                    with colf3:
+                        year_filter = st.text_input("Year (optional)", "")
+
+                    recs_f = recs.copy()
+                    recs_f = recs_f[recs_f["score"].fillna(0) >= min_score]
+                    recs_f = recs_f[recs_f["vote_count"].fillna(0) >= min_votes]
+
+                    date_col_rec = (
+                        "release_date" if active_type == "Movies" else "first_air_date"
+                    )
+                    if year_filter.strip() and date_col_rec in recs_f.columns:
+                        y = year_filter.strip()
+                        recs_f = recs_f[
+                            recs_f[date_col_rec].astype(str).str.startswith(y)
+                        ]
+
+                    if recs_f.empty:
+                        st.info("No recommendations match the selected filters.")
+                    else:
+                        score_norm = recs_f["score"].fillna(0) / 10.0
+                        votes_raw = recs_f["vote_count"].fillna(0)
+                        vmax = max(votes_raw.max(), 1)
+                        votes_norm = votes_raw / vmax
+
+                        recs_f["rank_score"] = 0.7 * score_norm + 0.3 * votes_norm
+                        recs_f = recs_f.sort_values("rank_score", ascending=False)
+
+                        rec_table_cols = [
+                            "title",
+                            "type",
+                            "score",
+                            "vote_count",
+                            "rank_score",
+                        ]
+                        if date_col_rec in recs_f.columns:
+                            rec_table_cols.append(date_col_rec)
+
+                        recs_table = recs_f[rec_table_cols].copy()
+                        recs_table.rename(
+                            columns={
+                                "title": "Title",
+                                "type": "Type",
+                                "score": "TMDb score",
+                                "vote_count": "Votes",
+                                "release_date": "Release date",
+                                "first_air_date": "First air date",
+                                "rank_score": "Rank score",
+                            },
+                            inplace=True,
+                        )
+                        st.dataframe(recs_table, width="stretch")
+
+            else:
+                if active_type == "Movies":
+                    recs = get_movie_recommendations(best, limit=50)
+                else:
+                    recs = get_tv_recommendations(best, limit=50)
+
+                if recs.empty:
+                    st.info("No recommendations found from TMDb.")
+                else:
+                    date_col_rec = (
+                        "release_date" if active_type == "Movies" else "first_air_date"
+                    )
+
+                    top10 = recs.sort_values("score", ascending=False).head(10).copy()
+                    imdb_ratings = []
+                    for _, row in top10.iterrows():
+                        y_val = None
+                        if date_col_rec in row and pd.notna(row[date_col_rec]):
+                            y_s = str(row[date_col_rec]).split("-")[0]
+                            y_val = int(y_s) if y_s.isdigit() else None
+                        od = fetch_omdb_for_tmdb(row["title"], y_val)
+                        if od and od.get("imdbRating") and od.get("imdbRating") != "N/A":
+                            imdb_ratings.append(od["imdbRating"])
+                        else:
+                            imdb_ratings.append(None)
+
+                    top10["imdb_rating"] = imdb_ratings
 
                     rec_table_cols = [
                         "title",
                         "type",
                         "score",
                         "vote_count",
-                        "rank_score",
+                        "imdb_rating",
                     ]
-                    if date_col_rec in recs_f.columns:
+                    if date_col_rec in top10.columns:
                         rec_table_cols.append(date_col_rec)
 
-                    recs_table = recs_f[rec_table_cols].copy()
+                    recs_table = top10[rec_table_cols].copy()
                     recs_table.rename(
                         columns={
                             "title": "Title",
@@ -669,7 +753,7 @@ if active_query.strip():
                             "vote_count": "Votes",
                             "release_date": "Release date",
                             "first_air_date": "First air date",
-                            "rank_score": "Rank score",
+                            "imdb_rating": "IMDb rating",
                         },
                         inplace=True,
                     )
