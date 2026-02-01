@@ -250,6 +250,8 @@ if active_query.strip():
                         },
                         inplace=True,
                     )
+                    series_table = series_table.reset_index(drop=True)
+                    series_table.insert(0, "Rank", series_table.index + 1)
                     st.dataframe(
                         series_table,
                         column_config={
@@ -306,6 +308,8 @@ if active_query.strip():
                     },
                     inplace=True,
                 )
+                table_df = table_df.reset_index(drop=True)
+                table_df.insert(0, "Rank", table_df.index + 1)
                 st.dataframe(table_df, width="stretch")
 
             # ---- Anime: More like this ----
@@ -492,6 +496,7 @@ if active_query.strip():
 
                         recs_table.rename(columns=rename_map, inplace=True)
                         recs_table = recs_table.reset_index(drop=True)
+                        recs_table.insert(0, "Rank", recs_table.index + 1)
                         st.dataframe(recs_table, width="stretch")
 
             else:
@@ -553,6 +558,8 @@ if active_query.strip():
                                 "similarity": "Similarity",
                             }
                         )
+                        table = table.reset_index(drop=True)
+                        table.insert(0, "Rank", table.index + 1)
                         st.dataframe(table, width="stretch")
 
         else:
@@ -628,6 +635,8 @@ if active_query.strip():
                 },
                 inplace=True,
             )
+            table_df = table_df.reset_index(drop=True)
+            table_df.insert(0, "Rank", table_df.index + 1)
             st.dataframe(table_df, width="stretch")
 
             # ---- Movie/TV: More like this ----
@@ -704,6 +713,8 @@ if active_query.strip():
                             },
                             inplace=True,
                         )
+                        recs_table = recs_table.reset_index(drop=True)
+                        recs_table.insert(0, "Rank", recs_table.index + 1)
                         st.dataframe(recs_table, width="stretch")
 
             else:
@@ -757,6 +768,8 @@ if active_query.strip():
                         },
                         inplace=True,
                     )
+                    recs_table = recs_table.reset_index(drop=True)
+                    recs_table.insert(0, "Rank", recs_table.index + 1)
                     st.dataframe(recs_table, width="stretch")
 
 else:
