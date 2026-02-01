@@ -25,6 +25,12 @@ from online_movie_sources import (
     summarize_streaming_providers,
 )
 
+from movie_offline_model import (
+    build_offline_movie_model,
+    build_offline_tv_model,
+    get_offline_similar,
+)
+
 CONTENT_TYPES = ["Anime", "Movies", "TV"]
 
 st.set_page_config(page_title="Watch Recommender", page_icon="🎬", layout="wide")
@@ -645,7 +651,7 @@ if active_query.strip():
 
             mode_mv = st.radio(
                 "Recommendation source",
-                ["TMDb API", "TMDb + IMDb (top 10 only)"],
+                ["TMDb API", "TMDb + IMDb (top 10 only)", "Offline streaming catalog (TF-IDF)"],
                 index=0,
             )
 
@@ -717,7 +723,7 @@ if active_query.strip():
                         recs_table.insert(0, "Rank", recs_table.index + 1)
                         st.dataframe(recs_table, width="stretch")
 
-            else:
+            elif mode_mv == "TMDb + IMDb (top 10 only)":
                 if active_type == "Movies":
                     recs = get_movie_recommendations(best, limit=50)
                 else:
@@ -771,6 +777,36 @@ if active_query.strip():
                     recs_table = recs_table.reset_index(drop=True)
                     recs_table.insert(0, "Rank", recs_table.index + 1)
                     st.dataframe(recs_table, width="stretch")
+
+            else:
+                # Offline streaming catalog mode
+                with st.spinner("Loading offline streaming catalog model..."):
+                    if active_type == "Movies":
+                        df_off, mat = build_offline_movie_model()
+                    else:
+                        df_off, mat = build_offline_tv_model()
+
+                top_n_off = st.slider("Max recommendations (offline)", 10, 50, 30, 5)
+
+                recs_off = get_offline_similar(df_off, mat, best["title"], top_n=top_n_off)
+                if recs_off.empty:
+                    st.info("No offline recommendations found for this title in the catalog.")
+                else:
+                    table = recs_off.rename(
+                        columns={
+                            "title": "Title",
+                            "provider": "Provider",
+                            "type": "Type",
+                            "release_year": "Year",
+                            "rating": "Rating",
+                            "duration": "Duration",
+                            "listed_in": "Genres",
+                            "similarity": "Similarity",
+                        }
+                    )
+                    table = table.reset_index(drop=True)
+                    table.insert(0, "Rank", table.index + 1)
+                    st.dataframe(table, width="stretch")
 
 else:
     st.info("Type a title above to get started.")
