@@ -19,6 +19,7 @@ from movie_recommender import (
     get_tv_recommendations,
 )
 
+
 CONTENT_TYPES = ["Anime", "Movies", "TV"]
 
 st.set_page_config(page_title="Watch Recommender", page_icon="🎬", layout="wide")
@@ -36,12 +37,15 @@ if "current_content_type" not in st.session_state:
 if "search_history" not in st.session_state:
     st.session_state.search_history = []
 
-
 # ---- Sidebar controls ----
 with st.sidebar:
     st.header("Search & settings")
 
-    content_type = st.radio("Content type", CONTENT_TYPES, index=CONTENT_TYPES.index(st.session_state.current_content_type))
+    content_type = st.radio(
+        "Content type",
+        CONTENT_TYPES,
+        index=CONTENT_TYPES.index(st.session_state.current_content_type),
+    )
 
     placeholder = {
         "Anime": "Search anime title",
@@ -52,7 +56,9 @@ with st.sidebar:
     query = st.text_input(placeholder, st.session_state.last_query)
     search_limit = st.slider("Max results per provider", 5, 30, 15, 5)
     st.markdown("---")
-    theme_pref = st.radio("Theme preference (for future)", ["System", "Light", "Dark"], index=0)
+    theme_pref = st.radio(
+        "Theme preference (for future)", ["System", "Light", "Dark"], index=0
+    )
     st.caption("Use the main area for timelines and recommendations.")
 
     if st.button("Search", type="primary"):
@@ -91,6 +97,16 @@ def get_offline_model():
 
 @st.cache_data(show_spinner=False)
 def cached_genre_recs(results_df: pd.DataFrame, best_row: dict, top_n: int):
+    # Make a copy and stringify any list-like columns so hashing works
+    df = results_df.copy()
+    for col in df.columns:
+        if df[col].dtype == "object":
+            df[col] = df[col].apply(
+                lambda x: ", ".join(map(str, x))
+                if isinstance(x, (list, tuple, set))
+                else x
+            )
+
     core_cols = [
         "provider",
         "provider_id",
@@ -103,8 +119,8 @@ def cached_genre_recs(results_df: pd.DataFrame, best_row: dict, top_n: int):
         "total_episodes",
         "start_date",
     ]
-    existing = [c for c in core_cols if c in results_df.columns]
-    safe_df = results_df[existing].copy()
+    existing = [c for c in core_cols if c in df.columns]
+    safe_df = df[existing].copy()
     return get_genre_based_recommendations(safe_df, best_row, top_n=top_n)
 
 
@@ -154,7 +170,11 @@ if active_query.strip():
                     st.write(f"**Total episodes:** {best['total_episodes']}")
 
                 status_val = best.get("status")
-                if not isinstance(status_val, str) or not status_val.strip() or status_val == "None":
+                if (
+                    not isinstance(status_val, str)
+                    or not status_val.strip()
+                    or status_val == "None"
+                ):
                     status_val = "Currently airing"
                 st.write(f"**Status:** {status_val}")
 
@@ -195,13 +215,22 @@ if active_query.strip():
                 if series_df.empty:
                     st.info("Not enough information to build a series timeline.")
                 else:
-                    base_cols = ["title", "type", "total_episodes", "status", "score", "provider"]
+                    base_cols = [
+                        "title",
+                        "type",
+                        "total_episodes",
+                        "status",
+                        "score",
+                        "provider",
+                    ]
                     cols = base_cols
                     if "image_url" in series_df.columns:
                         cols = ["image_url"] + base_cols
 
                     series_table = series_df[cols].copy()
-                    series_table["status"] = _normalize_status_col(series_table["status"])
+                    series_table["status"] = _normalize_status_col(
+                        series_table["status"]
+                    )
                     series_table.rename(
                         columns={
                             "title": "Title",
@@ -217,16 +246,20 @@ if active_query.strip():
                     st.dataframe(
                         series_table,
                         column_config={
-                            "Image": st.column_config.ImageColumn("Image", width="small"),
+                            "Image": st.column_config.ImageColumn(
+                                "Image", width="small"
+                            ),
                         },
-                        use_container_width=True,
+                        width="stretch",
                     )
 
             # ---- Anime search results ----
             st.markdown("---")
             st.header("Search results")
 
-            provider_options = ["All"] + sorted(results["provider"].astype(str).unique().tolist())
+            provider_options = ["All"] + sorted(
+                results["provider"].astype(str).unique().tolist()
+            )
             provider_filter = st.selectbox(
                 "Provider filter",
                 options=provider_options,
@@ -243,7 +276,15 @@ if active_query.strip():
                 st.info("No results match the selected provider.")
             else:
                 table_df = filtered_results[
-                    ["title", "type", "total_episodes", "status", "score", "provider", "simple_match"]
+                    [
+                        "title",
+                        "type",
+                        "total_episodes",
+                        "status",
+                        "score",
+                        "provider",
+                        "simple_match",
+                    ]
                 ].copy()
                 table_df["status"] = _normalize_status_col(table_df["status"])
                 table_df.rename(
@@ -258,7 +299,7 @@ if active_query.strip():
                     },
                     inplace=True,
                 )
-                st.dataframe(table_df, use_container_width=True)
+                st.dataframe(table_df, width="stretch")
 
             # ---- Anime: More like this ----
             st.markdown("---")
@@ -324,7 +365,11 @@ if active_query.strip():
                         def matches_pref(gstr):
                             if not isinstance(gstr, str):
                                 return False
-                            cur = {g.strip().lower() for g in gstr.split(",") if g.strip()}
+                            cur = {
+                                g.strip().lower()
+                                for g in gstr.split(",")
+                                if g.strip()
+                            }
                             return bool(pg_set & cur)
 
                         filtered = filtered[filtered["genres"].apply(matches_pref)]
@@ -345,25 +390,37 @@ if active_query.strip():
 
                     if type_filter != "All":
                         filtered = filtered[
-                            filtered["type"].astype(str).str.upper() == type_filter.upper()
+                            filtered["type"]
+                            .astype(str)
+                            .str.upper()
+                            == type_filter.upper()
                         ]
 
                     if min_score > 0:
-                        filtered = filtered[filtered["score"].fillna(0) >= min_score]
+                        filtered = filtered[
+                            filtered["score"].fillna(0) >= min_score
+                        ]
 
-                    filtered = filtered[filtered["total_episodes"].fillna(0) >= min_eps]
+                    filtered = filtered[
+                        filtered["total_episodes"].fillna(0) >= min_eps
+                    ]
 
                     if only_airing:
                         status_series = filtered["status"].astype(str).str.lower()
-                        mask_airing = status_series.str.contains("airing") | status_series.str.contains(
-                            "ongoing"
-                        )
+                        mask_airing = status_series.str.contains(
+                            "airing"
+                        ) | status_series.str.contains("ongoing")
                         filtered = filtered[mask_airing]
 
                     if rec_mode == "Same-franchise first":
                         main_title_lc = best["title"].strip().lower()
-                        filtered["same_franchise"] = filtered["title"].astype(str).str.lower().apply(
-                            lambda t: main_title_lc in t or t in main_title_lc
+                        filtered["same_franchise"] = (
+                            filtered["title"]
+                            .astype(str)
+                            .str.lower()
+                            .apply(
+                                lambda t: main_title_lc in t or t in main_title_lc
+                            )
                         )
                         filtered = filtered.sort_values(
                             by=["same_franchise", "shared_genres", "score"],
@@ -371,7 +428,9 @@ if active_query.strip():
                         )
                     elif rec_mode == "Hidden gems":
                         if "score" in filtered.columns:
-                            filtered = filtered.sort_values(by=["score"], ascending=True)
+                            filtered = filtered.sort_values(
+                                by=["score"], ascending=True
+                            )
 
                     if filtered.empty:
                         st.info("No recommendations match the selected filters.")
@@ -380,13 +439,19 @@ if active_query.strip():
                             base_rank = filtered["rec_score"].astype(float)
                         else:
                             score_norm = filtered["score"].fillna(0) / 10.0
-                            max_shared = max(filtered["shared_genres"].max(), 1)
-                            shared_norm = filtered["shared_genres"] / max_shared
+                            max_shared = max(
+                                filtered["shared_genres"].max(), 1
+                            )
+                            shared_norm = (
+                                filtered["shared_genres"] / max_shared
+                            )
                             base_rank = 0.6 * shared_norm + 0.4 * score_norm
 
                         filtered["rank_score"] = base_rank
 
-                        filtered = filtered.sort_values("rank_score", ascending=False)
+                        filtered = filtered.sort_values(
+                            "rank_score", ascending=False
+                        )
 
                         cols = [
                             "title",
@@ -402,7 +467,9 @@ if active_query.strip():
                             cols.insert(-1, "title_sim")
 
                         recs_table = filtered[cols].copy()
-                        recs_table["status"] = _normalize_status_col(recs_table["status"])
+                        recs_table["status"] = _normalize_status_col(
+                            recs_table["status"]
+                        )
                         rename_map = {
                             "title": "Title",
                             "score": "Score",
@@ -418,34 +485,58 @@ if active_query.strip():
 
                         recs_table.rename(columns=rename_map, inplace=True)
                         recs_table = recs_table.reset_index(drop=True)
-                        st.dataframe(recs_table, use_container_width=True)
+                        st.dataframe(recs_table, width="stretch")
 
             else:
-                st.subheader("Offline MAL content-based recommendations (MyAnimeList dataset)")
-                top_n_offline = st.slider("Max recommendations (offline)", 10, 50, 30, 5)
+                st.subheader(
+                    "Offline MAL content-based recommendations (MyAnimeList dataset)"
+                )
+                top_n_offline = st.slider(
+                    "Max recommendations (offline)", 10, 50, 30, 5
+                )
 
-                with st.spinner("Loading offline model (first time may take a bit)..."):
+                with st.spinner(
+                    "Loading offline model (first time may take a bit)..."
+                ):
                     df_off, tfidf_matrix = get_offline_model()
 
                 t = best["title"].strip().lower()
-                mask = df_off["title_display"].astype(str).str.lower().str.contains(t)
+                mask = (
+                    df_off["title_display"]
+                    .astype(str)
+                    .str.lower()
+                    .str.contains(t)
+                )
                 candidates = df_off[mask]
                 if candidates.empty:
-                    st.info("No offline recommendations found for this title in the MAL dataset.")
+                    st.info(
+                        "No offline recommendations found for this title in the MAL dataset."
+                    )
                 else:
                     if "score" in candidates.columns:
-                        best_idx = candidates["score"].fillna(0).astype(float).idxmax()
+                        best_idx = (
+                            candidates["score"]
+                            .fillna(0)
+                            .astype(float)
+                            .idxmax()
+                        )
                     else:
                         best_idx = candidates.index[0]
 
                     if best_idx not in df_off.index:
-                        st.info("No offline recommendations found for this title in the MAL dataset.")
+                        st.info(
+                            "No offline recommendations found for this title in the MAL dataset."
+                        )
                     else:
-                        cosine_sim = linear_kernel(tfidf_matrix[best_idx], tfidf_matrix).flatten()
+                        cosine_sim = linear_kernel(
+                            tfidf_matrix[best_idx], tfidf_matrix
+                        ).flatten()
                         df_out = df_off.copy()
                         df_out["similarity"] = cosine_sim
                         df_out = df_out[df_out.index != best_idx]
-                        df_out = df_out.sort_values("similarity", ascending=False).head(top_n_offline)
+                        df_out = df_out.sort_values(
+                            "similarity", ascending=False
+                        ).head(top_n_offline)
 
                         table = df_out.rename(
                             columns={
@@ -455,7 +546,7 @@ if active_query.strip():
                                 "similarity": "Similarity",
                             }
                         )
-                        st.dataframe(table, use_container_width=True)
+                        st.dataframe(table, width="stretch")
 
         else:
             # ---- Movie / TV flow ----
@@ -475,13 +566,17 @@ if active_query.strip():
                         st.write(f"**Release date:** {best['release_date']}")
                 else:
                     if pd.notna(best.get("first_air_date")):
-                        st.write(f"**First air date:** {best['first_air_date']}")
+                        st.write(
+                            f"**First air date:** {best['first_air_date']}"
+                        )
                 if pd.notna(best.get("score")):
                     st.write(f"**TMDb score:** {best['score']:.1f}")
                 if pd.notna(best.get("vote_count")):
                     st.write(f"**Votes:** {int(best['vote_count'])}")
 
-                if isinstance(best.get("overview"), str) and best["overview"].strip():
+                if isinstance(best.get("overview"), str) and best[
+                    "overview"
+                ].strip():
                     with st.expander("Overview", expanded=False):
                         st.write(best["overview"])
 
@@ -490,7 +585,11 @@ if active_query.strip():
             st.header("Search results")
 
             table_cols = ["title", "type", "score", "vote_count"]
-            date_col = "release_date" if active_type == "Movies" else "first_air_date"
+            date_col = (
+                "release_date"
+                if active_type == "Movies"
+                else "first_air_date"
+            )
             if date_col in results.columns:
                 table_cols.append(date_col)
 
@@ -506,7 +605,7 @@ if active_query.strip():
                 },
                 inplace=True,
             )
-            st.dataframe(table_df, use_container_width=True)
+            st.dataframe(table_df, width="stretch")
 
             # ---- Movie/TV: More like this ----
             st.markdown("---")
@@ -521,7 +620,11 @@ if active_query.strip():
                 st.info("No recommendations found from TMDb.")
             else:
                 rec_table_cols = ["title", "type", "score", "vote_count"]
-                date_col_rec = "release_date" if active_type == "Movies" else "first_air_date"
+                date_col_rec = (
+                    "release_date"
+                    if active_type == "Movies"
+                    else "first_air_date"
+                )
                 if date_col_rec in recs.columns:
                     rec_table_cols.append(date_col_rec)
 
@@ -537,7 +640,7 @@ if active_query.strip():
                     },
                     inplace=True,
                 )
-                st.dataframe(recs_table, use_container_width=True)
+                st.dataframe(recs_table, width="stretch")
 
 else:
     st.info("Type a title above to get started.")
