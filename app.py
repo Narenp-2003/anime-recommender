@@ -132,6 +132,12 @@ def cached_genre_recs(results_df: pd.DataFrame, best_row: dict, top_n: int):
 
     # The offline dataset uses different column names/shape than the
     # live-API results the rest of the app expects — normalize.
+    # Drop the raw title/title_english columns first — title_display
+    # already combines them, and renaming it to "title" below would
+    # otherwise create two columns named "title" (pandas then returns
+    # a DataFrame instead of a Series on result["title"], breaking
+    # everything downstream).
+    result = result.drop(columns=["title", "title_english"], errors="ignore")
     result = result.rename(columns={"genre": "genres", "title_display": "title"})
     result["provider"] = "Offline"
     result["type"] = result.get("type", "")
