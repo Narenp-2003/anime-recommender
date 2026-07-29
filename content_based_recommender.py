@@ -60,7 +60,7 @@ class ContentRecommender:
         df = pd.read_csv(self.dataset_path)
         df = df.head(self.max_rows).copy()
 
-        wanted = ["anime_id", "title_english", "title", "genre", "score", "episodes"]
+        wanted = ["anime_id", "title_english", "title", "genre", "score", "episodes", "type", "status"]
         cols = [c for c in wanted if c in df.columns]
         df = df[cols]
 

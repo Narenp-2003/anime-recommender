@@ -140,8 +140,8 @@ def cached_genre_recs(results_df: pd.DataFrame, best_row: dict, top_n: int):
     result = result.drop(columns=["title", "title_english"], errors="ignore")
     result = result.rename(columns={"genre": "genres", "title_display": "title"})
     result["provider"] = "Offline"
-    result["type"] = result.get("type", "")
-    result["status"] = ""
+    result["type"] = result.get("type", "").fillna("") if "type" in result.columns else ""
+    result["status"] = result.get("status", "").fillna("") if "status" in result.columns else ""
     result["total_episodes"] = result.get("episodes", pd.Series(dtype="float"))
     result["all_titles"] = result["title"].apply(lambda t: [t])
     return result
