@@ -3,11 +3,11 @@ import pandas as pd
 
 from anime_recommender import (
     search_all_providers,
-    get_genre_based_recommendations,
     get_same_title_group_sorted,
     get_series_group_with_relations,
     get_best_synopsis,
 )
+from content_based_recommender import get_recommender
 
 from offline_mal_model import build_offline_model
 from sklearn.metrics.pairwise import linear_kernel
@@ -111,30 +111,34 @@ def get_offline_model():
 
 @st.cache_data(show_spinner=False)
 def cached_genre_recs(results_df: pd.DataFrame, best_row: dict, top_n: int):
-    df = results_df.copy()
-    for col in df.columns:
-        if df[col].dtype == "object":
-            df[col] = df[col].apply(
-                lambda x: ", ".join(map(str, x))
-                if isinstance(x, (list, tuple, set))
-                else x
-            )
+    # Content-based: compares genres + synopsis via TF-IDF/cosine similarity
+    # instead of just counting overlapping genre tags.
+    title = str(best_row.get("title") or "")
+    genres = str(best_row.get("genres") or "")
+    synopsis = str(best_row.get("synopsis") or "")
 
-    core_cols = [
-        "provider",
-        "provider_id",
-        "title",
-        "all_titles",
-        "genres",
-        "score",
-        "status",
-        "type",
-        "total_episodes",
-        "start_date",
-    ]
-    existing = [c for c in core_cols if c in df.columns]
-    safe_df = df[existing].copy()
-    return get_genre_based_recommendations(safe_df, best_row, top_n=top_n)
+    rec = get_recommender()
+
+    # Prefer matching the source title directly in the offline dataset
+    # (richer synopsis text there); fall back to the genres/synopsis we
+    # already have from the live API result if no match is found.
+    result = rec.recommend_by_title(title, top_n=top_n)
+    if result.empty:
+        result = rec.recommend_from_text(
+            genres, synopsis, exclude_title=title, top_n=top_n
+        )
+    if result.empty:
+        return result
+
+    # The offline dataset uses different column names/shape than the
+    # live-API results the rest of the app expects — normalize.
+    result = result.rename(columns={"genre": "genres", "title_display": "title"})
+    result["provider"] = "Offline"
+    result["type"] = result.get("type", "")
+    result["status"] = ""
+    result["total_episodes"] = result.get("episodes", pd.Series(dtype="float"))
+    result["all_titles"] = result["title"].apply(lambda t: [t])
+    return result
 
 
 # ---- Main ----
