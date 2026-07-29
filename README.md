@@ -39,6 +39,7 @@ Key files:
 - `movie_offline_model.py` – (optional) offline movie/TV TF‑IDF model.
 - `online_movie_sources.py` – OMDb + streaming-availability API helpers.
 - `requirements.txt` – Python dependencies.
+- `content_based_recommender.py` – TF-IDF + cosine similarity engine for anime recommendations (replaces old genre-overlap counting).
 
 ## Setup
 
