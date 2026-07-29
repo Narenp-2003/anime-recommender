@@ -64,12 +64,13 @@ class ContentRecommender:
         cols = [c for c in wanted if c in df.columns]
         df = df[cols]
 
-        title_eng = df.get("title_english", pd.Series("", index=df.index)).fillna("")
-        title_jp = df.get("title", pd.Series("", index=df.index)).fillna("")
-        df["title_display"] = (title_eng.astype(str) + " " + title_jp.astype(str)).str.strip()
-        empty = df["title_display"] == ""
-        if "title" in df.columns:
-            df.loc[empty, "title_display"] = df.loc[empty, "title"].astype(str)
+        title_eng = df.get("title_english", pd.Series("", index=df.index)).fillna("").astype(str).str.strip()
+        title_main = df.get("title", pd.Series("", index=df.index)).fillna("").astype(str).str.strip()
+        # Prefer the English title; fall back to the native/romaji title.
+        # Don't concatenate both — when they're identical (common) that
+        # produced "Death Note Death Note", which corrupted fuzzy-match
+        # scores against user search input.
+        df["title_display"] = title_eng.where(title_eng != "", title_main)
 
         genre = df.get("genre", pd.Series("", index=df.index)).fillna("").astype(str)
 
@@ -85,10 +86,20 @@ class ContentRecommender:
         self._matrix = self._vectorizer.fit_transform(self._df["text"])
 
     def _find_title_index(self, title: str):
-        """Fuzzy-match a user-provided title to a row in the dataset."""
+        """Fuzzy-match a user-provided title to a row in the dataset.
+        Uses token_sort_ratio (not WRatio, which has a false-positive
+        problem: it scores short unrelated titles like "K K" or "Canaan"
+        as 85%+ matches for "Jujutsu Kaisen"/"Chainsaw Man" via aggressive
+        partial-ratio boosting). Threshold 90 was chosen because testing
+        showed genuine matches scoring 98-100 and false matches capping
+        at ~76 with this scorer+dataset. This offline dataset is old and
+        doesn't cover many newer titles, so returning no match (rather
+        than a bad guess) lets the caller fall back to the live search
+        result's real genre data instead of generating irrelevant recs
+        from a completely unrelated show."""
         choices = self._df["title_display"].tolist()
-        match = process.extractOne(title, choices, scorer=fuzz.WRatio)
-        if not match or match[1] < 60:
+        match = process.extractOne(title, choices, scorer=fuzz.token_sort_ratio)
+        if not match or match[1] < 90:
             return None
         return match[2]  # index into choices / self._df
 
