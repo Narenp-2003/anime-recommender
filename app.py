@@ -449,8 +449,9 @@ if active_query.strip():
                                 lambda t: main_title_lc in t or t in main_title_lc
                             )
                         )
+                        sort_metric = "similarity" if "similarity" in filtered.columns else "score"
                         filtered = filtered.sort_values(
-                            by=["same_franchise", "shared_genres", "score"],
+                            by=["same_franchise", sort_metric, "score"],
                             ascending=[False, False, False],
                         )
                     elif rec_mode == "Hidden gems":
@@ -464,6 +465,9 @@ if active_query.strip():
                     else:
                         if "rec_score" in filtered.columns:
                             base_rank = filtered["rec_score"].astype(float)
+                        elif "similarity" in filtered.columns:
+                            score_norm = filtered["score"].fillna(0) / 10.0
+                            base_rank = 0.85 * filtered["similarity"] + 0.15 * score_norm
                         else:
                             score_norm = filtered["score"].fillna(0) / 10.0
                             max_shared = max(
@@ -487,9 +491,12 @@ if active_query.strip():
                             "status",
                             "genres",
                             "provider",
-                            "shared_genres",
                             "rank_score",
                         ]
+                        if "similarity" in filtered.columns:
+                            cols.insert(-1, "similarity")
+                        elif "shared_genres" in filtered.columns:
+                            cols.insert(-1, "shared_genres")
                         if "title_sim" in filtered.columns:
                             cols.insert(-1, "title_sim")
 
@@ -504,6 +511,7 @@ if active_query.strip():
                             "status": "Status",
                             "genres": "Genres",
                             "provider": "Provider",
+                            "similarity": "Similarity",
                             "shared_genres": "Shared genres",
                             "rank_score": "Rank score",
                         }
