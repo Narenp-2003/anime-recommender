@@ -88,7 +88,7 @@ with st.sidebar:
             if st.button(q, key=f"hist_{q}"):
                 st.session_state.last_query = q
                 st.session_state.current_anime = None
-                st.experimental_rerun()
+                st.rerun()
 
 
 def _normalize_status_col(s):
